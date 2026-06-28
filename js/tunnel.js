@@ -94,16 +94,16 @@ function generateChunk(yPos, prevCentre) {
 }
 
 /**
- * Reposition a chunk below the current lowest chunk and re‑roll its gap.
+ * Reposition a chunk above the current highest chunk and re‑roll its gap.
  */
 function recycleChunk(chunk) {
-  const lowest  = chunks.reduce((a, c) => (c.y > a.y ? c : a), chunks[0]);
-  // Find the previous chunk in the sorted list for centre constraint
+  const highest = chunks.reduce((a, c) => (c.y < a.y ? c : a), chunks[0]);
+  // Find the next chunk in the sorted list for centre constraint
   const sorted = [...chunks].sort((a, b) => a.y - b.y);
   const idx    = sorted.indexOf(chunk);
-  const prev   = idx > 0 ? sorted[idx - 1] : sorted[sorted.length - 1];
+  const next   = idx < sorted.length - 1 ? sorted[idx + 1] : sorted[0];
 
-  const fresh = generateChunk(lowest.y + CHUNK_HEIGHT, prev.gapCentre);
+  const fresh = generateChunk(highest.y - CHUNK_HEIGHT, next.gapCentre);
   chunk.id         = fresh.id;
   chunk.y          = fresh.y;
   chunk.gapCentre  = fresh.gapCentre;
@@ -148,10 +148,9 @@ export function update(dt, speed) {
     for (const w of ch.rightWalls) w.y += scrollDist;
   }
 
-  // Recycle chunks that have scrolled entirely above the viewport
-  const recycleThreshold = -CHUNK_HEIGHT * 0.5;
+  // Recycle chunks that have scrolled past the bottom of the viewport
   for (let i = 0; i < chunks.length; i++) {
-    if (chunks[i].y + CHUNK_HEIGHT < recycleThreshold) {
+    if (chunks[i].y > CANVAS_H) {
       recycleChunk(chunks[i]);
     }
   }
