@@ -1,0 +1,56 @@
+/**
+ * VERT/X — Input module.
+ *
+ * Action‑queue pattern. Each frame the game loop calls `dequeueAction()`
+ * exactly once, consuming one queued tap. Multiple rapid inputs within the
+ * same frame collapse to a single action.
+ *
+ * Events:
+ *   - pointerdown on canvas (passive:true – no preventDefault needed)
+ *   - keydown on document  (Space / ArrowUp; Space prevented to avoid scroll)
+ */
+
+export const ACTION_TAP = 'TAP';
+
+/** @type {string[]} First‑in‑first‑out queue of action tokens. */
+let actionQueue = [];
+
+/**
+ * Bind input listeners to the given canvas element.
+ * Safe to call multiple times — each call rebinds fresh listeners.
+ *
+ * @param {HTMLCanvasElement} canvas
+ */
+export function init(canvas) {
+  // Flush any stale actions from a previous session
+  actionQueue = [];
+
+  // ── Pointer ─────────────────────────────────────────────────────────
+  canvas.addEventListener('pointerdown', () => {
+    actionQueue.push(ACTION_TAP);
+  }, { passive: true });
+
+  // ── Keyboard ────────────────────────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Space' || e.key === 'ArrowUp') {
+      // Prevent Space from scrolling the page
+      if (e.key === ' ' || e.key === 'Space') {
+        e.preventDefault();
+      }
+      actionQueue.push(ACTION_TAP);
+    }
+  });
+}
+
+/**
+ * Consume one action from the queue, returning the first waiting token
+ * or `null` when the queue is empty.
+ *
+ * Call this ONCE per fixed‑timestep tick so that rapid taps within a
+ * single frame only produce one action.
+ *
+ * @returns {string|null}
+ */
+export function dequeueAction() {
+  return actionQueue.shift() ?? null;
+}
