@@ -18,60 +18,172 @@ import { getGapAtY } from './tunnel.js';
 const CANVAS_W = 360;
 const CANVAS_H = 640;
 
-const TRAIL_MAX      = 200;
-const TRAIL_SAMPLE_DIST = 30;
+const TRAIL_MAX          = 200;
+const TRAIL_SAMPLE_DIST  = 30;
 
 const INVULN_DURATION = 1500;
 
-
 /* ===================================================================
-   Sprite data  —  12×12 pixel art character
-   Palette: 0=transparent, 1=cyan body, 2=white visor, 3=dark accent,
-            4=pink accent, 5=magenta
+   32×32 Sprite system — pre‑generated offscreen canvases
    =================================================================== */
 
-const S = { _:0, C:1, W:2, D:3, P:4, M:5 };
+const SPRITE_W     = 32;
+const SPRITE_H     = 32;
+const ANIM_FRAMES  = 6;
+const ANIM_MS      = 100;
+const SCREEN_HALF  = 180;
 
-const SPRITE = [
-  //0 1 2 3 4 5 6 7 8 9 0 1
-  [0,0,0,0,0,1,1,0,0,0,0,0],  //  0 — helmet dome
-  [0,0,0,1,1,1,1,1,1,0,0,0],  //  1 — helmet
-  [0,0,1,1,2,2,2,2,1,1,0,0],  //  2 — visor (white)
-  [0,1,1,1,1,1,1,1,1,1,1,0],  //  3 — shoulders
-  [1,1,1,1,1,1,1,1,1,1,1,1],  //  4 — body
-  [1,1,1,1,1,1,1,1,1,1,1,1],  //  5 — body
-  [1,1,0,1,1,1,1,0,1,1,0,0],  //  6 — arms
-  [0,1,0,1,3,3,1,0,1,0,0,0],  //  7 — torso
-  [0,1,1,0,0,0,0,1,1,0,0,0],  //  8 — waist
-  [0,0,1,0,0,0,0,1,0,0,0,0],  //  9 — legs
-  [0,0,1,0,0,0,0,1,0,0,0,0],  // 10 — legs
-  [0,0,0,3,0,0,3,0,0,0,0,0],  // 11 — feet / thrusters
-];
+/**
+ * Build one running frame at a given animation phase, with side‑aware lean.
+ * @param {number} phase  0 … 1
+ * @param {number} side   -1 (left half) | 1 (right half)
+ * @returns {HTMLCanvasElement}
+ */
+function buildRunFrame(phase, side) {
+  const cv = document.createElement('canvas');
+  cv.width  = SPRITE_W;
+  cv.height = SPRITE_H;
+  const s = cv.getContext('2d');
 
-const PAL = ['', '#0ff', '#fff', '#088', '#f0f', '#f08'];
+  const fill = (x, y, w, h, col) => { s.fillStyle = col; s.fillRect(x, y, w, h); };
 
-/* ===================================================================
-   Offscreen canvas — render sprite once, cache for drawImage
-   =================================================================== */
+  const legSwing  = Math.round(Math.sin(phase * Math.PI * 2) * 3);
+  const armSwing  = Math.round(Math.sin(phase * Math.PI * 2 + Math.PI) * 3);
+  const lean      = side * 1;
 
-let spriteCanvas = null;
+  // Boots / thrusters
+  fill(11 + lean, 26 + legSwing, 4, 3, '#088');
+  fill(17 + lean, 26 - legSwing, 4, 3, '#088');
 
-function getSpriteCanvas() {
-  if (!spriteCanvas) {
-    spriteCanvas = document.createElement('canvas');
-    spriteCanvas.width  = 12;
-    spriteCanvas.height = 12;
-    const sctx = spriteCanvas.getContext('2d');
-    for (let row = 0; row < 12; row++) {
-      for (let col = 0; col < 12; col++) {
-        const idx = SPRITE[row][col];
-        if (idx === 0) continue;
-        sctx.fillStyle = PAL[idx];
-        sctx.fillRect(col, row, 1, 1);
-      }
-    }
+  // Legs
+  fill(12 + lean, 21, 2, 6 + legSwing, '#0ff');
+  fill(18 + lean, 21, 2, 6 - legSwing, '#0ff');
+
+  // Waist
+  fill(10 + lean, 20, 12, 2, '#0ff');
+  fill(10 + lean, 20, 12, 1, '#fff');
+
+  // Torso
+  fill(10 + lean, 13, 12, 8, '#0ff');
+  fill(11 + lean, 14, 10, 6, '#0ff');
+  fill(15 + lean, 15,  2, 5, '#088');   // centre line
+
+  // Arms (swing opposite to legs)
+  fill( 7 + lean + armSwing, 14, 4, 3, '#0ff');
+  fill(21 + lean - armSwing, 14, 4, 3, '#0ff');
+
+  // Shoulders
+  fill( 8 + lean, 12, 4, 2, '#0ff');
+  fill(20 + lean, 12, 4, 2, '#0ff');
+
+  // Neck
+  fill(14, 10, 4, 2, '#0ff');
+
+  // Helmet
+  fill(11, 3, 10, 8, '#0ff');
+  fill(12, 2,  8, 2, '#0ff');
+  fill(13, 1,  6, 2, '#0ff');
+
+  // Antenna
+  fill(15, 0, 2, 1, '#0ff');
+  fill(14, 0, 1, 1, '#f0f');            // pink tip
+
+  // Visor
+  fill(14, 5, 8, 3, '#fff');
+  fill(14, 6, 8, 1, '#0ff');            // cyan visor line
+  fill(16, 5, 2, 1, '#f0f');            // pink glint
+
+  // Helmet rim
+  fill(11, 9, 10, 1, '#088');
+
+  // Side accents
+  fill( 9 + lean, 16, 1, 4, '#f0f');
+  fill(22 + lean, 16, 1, 4, '#f0f');
+
+  return cv;
+}
+
+/**
+ * Boost / jump frame — legs tucked, arms up.
+ * @param {number} side
+ * @returns {HTMLCanvasElement}
+ */
+function buildBoostFrame(side) {
+  const cv = document.createElement('canvas');
+  cv.width  = SPRITE_W;
+  cv.height = SPRITE_H;
+  const s = cv.getContext('2d');
+
+  const fill = (x, y, w, h, col) => { s.fillStyle = col; s.fillRect(x, y, w, h); };
+  const lean = side * 1;
+
+  // Boots (tucked under)
+  fill(12 + lean, 26, 3, 2, '#088');
+  fill(17 + lean, 26, 3, 2, '#088');
+
+  // Legs (bent, shorter)
+  fill(13 + lean, 22, 2, 5, '#0ff');
+  fill(17 + lean, 22, 2, 5, '#0ff');
+
+  // Waist
+  fill(11 + lean, 21, 10, 2, '#0ff');
+
+  // Body
+  fill(10 + lean, 14, 12, 8, '#0ff');
+  fill(15, 16, 2, 4, '#088');            // centre line
+
+  // Arms (raised)
+  fill( 8 + lean, 12, 3, 3, '#0ff');
+  fill(21 + lean, 12, 3, 3, '#0ff');
+
+  // Shoulders
+  fill( 9 + lean, 13, 3, 2, '#0ff');
+  fill(20 + lean, 13, 3, 2, '#0ff');
+
+  // Neck
+  fill(14, 11, 4, 2, '#0ff');
+
+  // Helmet
+  fill(11, 4, 10, 8, '#0ff');
+  fill(12, 3,  8, 2, '#0ff');
+  fill(13, 2,  6, 2, '#0ff');
+
+  // Antenna
+  fill(15, 1, 2, 1, '#0ff');
+  fill(14, 1, 1, 1, '#f0f');
+
+  // Visor
+  fill(14, 6, 8, 3, '#fff');
+  fill(14, 7, 8, 1, '#0ff');
+  fill(16, 6, 2, 1, '#f0f');
+
+  // Rim
+  fill(11, 10, 10, 1, '#088');
+
+  // Pink accents
+  fill(10 + lean, 17, 1, 3, '#f0f');
+  fill(21 + lean, 17, 1, 3, '#f0f');
+
+  return cv;
+}
+
+/** Pre‑generated frame cache. */
+let frames = null;
+
+function buildFrames() {
+  const runLeft  = [];
+  const runRight = [];
+  for (let i = 0; i < ANIM_FRAMES; i++) {
+    const phase = i / ANIM_FRAMES;
+    runLeft.push(buildRunFrame(phase, -1));
+    runRight.push(buildRunFrame(phase, 1));
   }
-  return spriteCanvas;
+  return {
+    runLeft,
+    runRight,
+    boostLeft:  buildBoostFrame(-1),
+    boostRight: buildBoostFrame(1),
+  };
 }
 
 /* ===================================================================
@@ -92,6 +204,8 @@ const player = {
   trail: [],
   trailLastX: 0,
   trailLastY: 0,
+  animTimer: 0,             // ms accumulator for running animation
+  boostTimer: 0,            // ms remaining for boost/jump pose
 };
 
 /* ===================================================================
@@ -100,6 +214,7 @@ const player = {
 
 export function init(_ctx) {
   ctx = _ctx;
+  if (!frames) frames = buildFrames();
   reset();
 }
 
@@ -115,6 +230,8 @@ export function reset() {
   player.trail       = [];
   player.trailLastX  = player.x;
   player.trailLastY  = player.y;
+  player.animTimer   = 0;
+  player.boostTimer  = 0;
 }
 
 /* ===================================================================
@@ -122,13 +239,17 @@ export function reset() {
    =================================================================== */
 
 export function update(dt, speed) {
+  // ── Input ───────────────────────────────────────────────────────
   if (dequeueAction() === ACTION_TAP) {
     player.vx = -player.vx;
+    player.boostTimer = 250;          // 250 ms boost visual
   }
 
+  // ── Movement ────────────────────────────────────────────────────
   const s = dt / 1000 * Math.max(speed, 0.01);
   player.x += player.vx * s;
 
+  // ── Tunnel wall bounds ──────────────────────────────────────────
   const gap = getGapAtY(player.y);
   if (gap) {
     const minX = gap.left  + player.radius;
@@ -140,14 +261,23 @@ export function update(dt, speed) {
     if (player.x > maxX) player.x = maxX;
   }
 
+  // ── Invulnerability ─────────────────────────────────────────────
   if (player.invulnTimer > 0) {
     player.invulnTimer = Math.max(0, player.invulnTimer - dt);
   }
 
+  // ── Shake ───────────────────────────────────────────────────────
   if (player.shakeTimer > 0) {
     player.shakeTimer = Math.max(0, player.shakeTimer - dt);
   }
 
+  // ── Animation timers ────────────────────────────────────────────
+  player.animTimer  += dt;
+  if (player.boostTimer > 0) {
+    player.boostTimer = Math.max(0, player.boostTimer - dt);
+  }
+
+  // ── Trail ───────────────────────────────────────────────────────
   const dx = player.x - player.trailLastX;
   const dy = player.y - player.trailLastY;
   if (Math.sqrt(dx * dx + dy * dy) >= TRAIL_SAMPLE_DIST) {
@@ -187,7 +317,7 @@ export function draw(alpha) {
     }
   }
 
-  // ── Skip drawing during invulnerability flash ───────────────────
+  // ── Skip during invulnerability flash ───────────────────────────
   if (player.invulnTimer > 0) {
     const flashCycle = Math.floor(player.invulnTimer / 100) % 2 === 0;
     if (!flashCycle) {
@@ -196,27 +326,37 @@ export function draw(alpha) {
     }
   }
 
-  // ── Pixel art sprite ────────────────────────────────────────────
+  // ── Select frame ───────────────────────────────────────────────
+  const side       = player.x < SCREEN_HALF ? 'Left' : 'Right';
+  const runArr     = side === 'Left' ? frames.runLeft  : frames.runRight;
+  const boostFrame = side === 'Left' ? frames.boostLeft : frames.boostRight;
+
+  const isBoost     = player.boostTimer > 0;
+  const frameIdx    = Math.floor(player.animTimer / ANIM_MS) % ANIM_FRAMES;
+  const canvas      = isBoost ? boostFrame : runArr[frameIdx];
+
+  // ── Render ──────────────────────────────────────────────────────
   const px = Math.round(player.x);
   const py = Math.round(player.y);
 
   ctx.save();
   ctx.translate(px, py);
-  // Flip horizontally when moving right so the character faces
-  // the direction of travel. (Default vx < 0 = facing left.)
+
+  // Flip horizontally when moving right
   if (player.vx > 0) ctx.scale(-1, 1);
 
-  // Glow layer behind the sprite
+  // Glow
   ctx.shadowColor = '#0ff';
   ctx.shadowBlur  = 15;
 
-  // Draw cached pixel‑art sprite (12×12, centered)
-  ctx.drawImage(getSpriteCanvas(), -6, -6);
+  // Draw the 32×32 sprite centred
+  ctx.drawImage(canvas, -SPRITE_W / 2, -SPRITE_H / 2);
 
   ctx.restore();
 
   if (shaking) ctx.restore();
 }
+
 export function onHit() {
   if (player.invulnTimer > 0 || player.lives <= 0) return false;
   player.invulnTimer = INVULN_DURATION;
