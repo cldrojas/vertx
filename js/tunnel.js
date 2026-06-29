@@ -49,6 +49,7 @@ let chunks = [];
  * @property {number}  gapWidth  – width of the passage
  * @property {{x:number,y:number,w:number,h:number}[]} leftWalls
  * @property {{x:number,y:number,w:number,h:number}[]} rightWalls
+ * @property {{type:string,x:number,y:number,w:number,h:number,side?:string}[]} obstacles
  */
 
 let nextId = 0;

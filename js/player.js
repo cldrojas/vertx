@@ -18,10 +18,16 @@ import { getGapAtY } from './tunnel.js';
 const CANVAS_W = 360;
 const CANVAS_H = 640;
 
-const TRAIL_MAX          = 200;
-const TRAIL_SAMPLE_DIST  = 30;
-
 const INVULN_DURATION = 1500;
+
+/* ── Comet tail config (history-based) ──────────────────────────── */
+const HISTORY_LEN = 80;       // frames de historial guardados
+const TAIL_MIN_LEN = 20;       // segmentos minimos del trail (speed 1.0)
+const TAIL_MAX_LEN = 80;       // segmentos maximos del trail (speed 3.0)
+const TAIL_AMP    = 4;        // amplitud de ondulación sinusoidal (px)
+const TAIL_FREQ   = 0.004;    // frecuencia de ondulación
+const TAIL_BASE_OP = 0.5;     // opacidad en la cabeza del trail
+const TAIL_BASE_R  = 5;       // radio en la cabeza del trail (px)
 
 /* ===================================================================
    32×32 Sprite system — pre‑generated offscreen canvases
@@ -201,11 +207,12 @@ const player = {
   lives: 3,
   invulnTimer: 0,
   shakeTimer: 0,
-  trail: [],
-  trailLastX: 0,
-  trailLastY: 0,
   animTimer: 0,             // ms accumulator for running animation
   boostTimer: 0,            // ms remaining for boost/jump pose
+  tailTime: 0,              // ms for comet-tail animation phase
+  posHistory: [],           // ring buffer de {x, y}
+  historyHead: 0,           // índice de escritura actual
+  currentSpeed: 1.0,        // velocidad actual para estela dinámica
 };
 
 /* ===================================================================
@@ -227,11 +234,12 @@ export function reset() {
   player.lives       = 3;
   player.invulnTimer = 0;
   player.shakeTimer  = 0;
-  player.trail       = [];
-  player.trailLastX  = player.x;
-  player.trailLastY  = player.y;
   player.animTimer   = 0;
   player.boostTimer  = 0;
+  player.tailTime    = 0;
+  player.posHistory  = [];
+  player.historyHead = 0;
+  player.currentSpeed = 1.0;
 }
 
 /* ===================================================================
@@ -273,20 +281,20 @@ export function update(dt, speed) {
 
   // ── Animation timers ────────────────────────────────────────────
   player.animTimer  += dt;
+  player.tailTime   += dt;
   if (player.boostTimer > 0) {
     player.boostTimer = Math.max(0, player.boostTimer - dt);
   }
 
-  // ── Trail ───────────────────────────────────────────────────────
-  const dx = player.x - player.trailLastX;
-  const dy = player.y - player.trailLastY;
-  if (Math.sqrt(dx * dx + dy * dy) >= TRAIL_SAMPLE_DIST) {
-    player.trail.push({ x: player.x, y: player.y });
-    if (player.trail.length > TRAIL_MAX) {
-      player.trail.shift();
-    }
-    player.trailLastX = player.x;
-    player.trailLastY = player.y;
+  // ── Store current speed for dynamic trail length
+  player.currentSpeed = speed;
+
+  // ── Record position history for comet trail ─────────────────────
+  if (player.posHistory.length < HISTORY_LEN) {
+    player.posHistory.push({ x: player.x, y: player.y });
+  } else {
+    player.posHistory[player.historyHead] = { x: player.x, y: player.y };
+    player.historyHead = (player.historyHead + 1) % HISTORY_LEN;
   }
 }
 
@@ -304,17 +312,31 @@ export function draw(alpha) {
     );
   }
 
-  // ── Trail ───────────────────────────────────────────────────────
-  if (player.trail.length > 1) {
-    for (let i = 1; i < player.trail.length; i++) {
-      const t = i / player.trail.length;
-      ctx.strokeStyle = `rgba(0, 255, 255, ${t * 0.35})`;
-      ctx.lineWidth = t * 3 + 1;
-      ctx.beginPath();
-      ctx.moveTo(Math.round(player.trail[i - 1].x), Math.round(player.trail[i - 1].y));
-      ctx.lineTo(Math.round(player.trail[i].x),     Math.round(player.trail[i].y));
-      ctx.stroke();
-    }
+  // ── Comet trail (history-based) ─────────────────────────────────
+    // Longitud dinámica: más velocidad = estela más larga
+  const speedNorm = (player.currentSpeed - 1) / (3 - 1); // 0..1
+  const dynLen = Math.round(TAIL_MIN_LEN + speedNorm * (TAIL_MAX_LEN - TAIL_MIN_LEN));
+  const tailLen = Math.min(dynLen, player.posHistory.length);
+  const tailNow = player.tailTime;
+
+  for (let i = 0; i < tailLen; i++) {
+    const idx = (player.historyHead - 1 - i + HISTORY_LEN) % HISTORY_LEN;
+    const pos = player.posHistory[idx];
+    if (!pos) break;
+
+    const t = i / tailLen;                          // 0 at player → 1 at tip
+    const alpha = TAIL_BASE_OP * (1 - t) * (1 - t); // quadratic fade
+    const rad   = TAIL_BASE_R * (1 - t) + 0.5;
+
+    // Sine wave perturbation over the real historical X position
+    const wave = Math.sin(tailNow * TAIL_FREQ + i * 0.5) * TAIL_AMP * (1 - t);
+    const tx = Math.round(pos.x + wave);
+    const ty = Math.round(pos.y);
+
+    ctx.beginPath();
+    ctx.arc(tx, ty, rad, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
+    ctx.fill();
   }
 
   // ── Skip during invulnerability flash ───────────────────────────
@@ -385,6 +407,4 @@ export function getLives() {
   return player.lives;
 }
 
-export function getTrail() {
-  return player.trail;
-}
+
