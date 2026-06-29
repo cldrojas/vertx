@@ -24,10 +24,14 @@ const INVULN_DURATION = 1500;
 const HISTORY_LEN = 80;       // frames de historial guardados
 const TAIL_MIN_LEN = 20;       // segmentos minimos del trail (speed 1.0)
 const TAIL_MAX_LEN = 80;       // segmentos maximos del trail (speed 3.0)
-const TAIL_AMP    = 4;        // amplitud de ondulación sinusoidal (px)
-const TAIL_FREQ   = 0.004;    // frecuencia de ondulación
 const TAIL_BASE_OP = 0.5;     // opacidad en la cabeza del trail
-const TAIL_BASE_R  = 5;       // radio en la cabeza del trail (px)
+
+/* ── Sprite trail config ───────────────────────────────────────── */
+const TRAIL_SPRITE_FRAMES = 8;
+const TRAIL_SPRITE_SRC_W  = 302;    // source PNG width (px)
+const TRAIL_SPRITE_SRC_H  = 332;    // source PNG height (px)
+const TRAIL_SPRITE_DISP_W = 30;     // display width on canvas (px)
+const TRAIL_VERT_GAP  = 20;     // vertical spacing between trail sprites (px)
 
 /* ===================================================================
    32×32 Sprite system — pre‑generated offscreen canvases
@@ -176,6 +180,10 @@ function buildBoostFrame(side) {
 /** Pre‑generated frame cache. */
 let frames = null;
 
+let trailSprites = [];      // HTMLCanvasElement[] — pre-processed cyan-tinted frames
+let trailReady   = false;   // true once all sprites loaded and processed
+let trailLoaded  = 0;       // count of successfully loaded images
+
 function buildFrames() {
   const runLeft  = [];
   const runRight = [];
@@ -190,6 +198,46 @@ function buildFrames() {
     boostLeft:  buildBoostFrame(-1),
     boostRight: buildBoostFrame(1),
   };
+}
+
+/**
+ * Load 8 trail sprite PNGs and pre-process them to cyan-tinted canvases.
+ */
+function loadTrailSprites() {
+  const processFrame = (img, idx) => {
+    const cv = document.createElement('canvas');
+    cv.width  = TRAIL_SPRITE_SRC_W;
+    cv.height = TRAIL_SPRITE_SRC_H;
+    const s = cv.getContext('2d');
+    
+    // Draw the original sprite
+    s.drawImage(img, 0, 0);
+    
+    // Cyan tint via source-in: fill with cyan, keep only where sprite has pixels
+    s.globalCompositeOperation = 'source-in';
+    s.fillStyle = '#0ff';
+    s.fillRect(0, 0, TRAIL_SPRITE_SRC_W, TRAIL_SPRITE_SRC_H);
+    s.globalCompositeOperation = 'source-over';
+    
+    trailSprites[idx] = cv;
+    trailLoaded++;
+    if (trailLoaded === TRAIL_SPRITE_FRAMES) {
+      trailReady = true;
+    }
+  };
+
+  for (let i = 0; i < TRAIL_SPRITE_FRAMES; i++) {
+    const img = new Image();
+    img.onload  = () => processFrame(img, i);
+    img.onerror = () => {
+      console.warn(`[player] Failed to load trail sprite ${i + 1}.png`);
+      trailLoaded++;
+      if (trailLoaded === TRAIL_SPRITE_FRAMES && !trailReady) {
+        // All attempted, none succeeded — trail stays disabled
+      }
+    };
+    img.src = `sprites/${i + 1}.png`;
+  }
 }
 
 /* ===================================================================
@@ -209,7 +257,6 @@ const player = {
   shakeTimer: 0,
   animTimer: 0,             // ms accumulator for running animation
   boostTimer: 0,            // ms remaining for boost/jump pose
-  tailTime: 0,              // ms for comet-tail animation phase
   posHistory: [],           // ring buffer de {x, y}
   historyHead: 0,           // índice de escritura actual
   currentSpeed: 1.0,        // velocidad actual para estela dinámica
@@ -222,6 +269,7 @@ const player = {
 export function init(_ctx) {
   ctx = _ctx;
   if (!frames) frames = buildFrames();
+  if (trailSprites.length === 0) loadTrailSprites();
   reset();
 }
 
@@ -236,7 +284,6 @@ export function reset() {
   player.shakeTimer  = 0;
   player.animTimer   = 0;
   player.boostTimer  = 0;
-  player.tailTime    = 0;
   player.posHistory  = [];
   player.historyHead = 0;
   player.currentSpeed = 1.0;
@@ -281,7 +328,6 @@ export function update(dt, speed) {
 
   // ── Animation timers ────────────────────────────────────────────
   player.animTimer  += dt;
-  player.tailTime   += dt;
   if (player.boostTimer > 0) {
     player.boostTimer = Math.max(0, player.boostTimer - dt);
   }
@@ -312,31 +358,38 @@ export function draw(alpha) {
     );
   }
 
-  // ── Comet trail (history-based) ─────────────────────────────────
-    // Longitud dinámica: más velocidad = estela más larga
-  const speedNorm = (player.currentSpeed - 1) / (3 - 1); // 0..1
-  const dynLen = Math.round(TAIL_MIN_LEN + speedNorm * (TAIL_MAX_LEN - TAIL_MIN_LEN));
-  const tailLen = Math.min(dynLen, player.posHistory.length);
-  const tailNow = player.tailTime;
+  // ── Comet trail (sprite-based, vertical) ────────────────────────
+  if (trailReady) {
+    const speedNorm = (player.currentSpeed - 1) / (3 - 1); // 0..1
+    const dynLen = Math.round(TAIL_MIN_LEN + speedNorm * (TAIL_MAX_LEN - TAIL_MIN_LEN));
+    const tailLen = Math.min(dynLen, player.posHistory.length);
 
-  for (let i = 0; i < tailLen; i++) {
-    const idx = (player.historyHead - 1 - i + HISTORY_LEN) % HISTORY_LEN;
-    const pos = player.posHistory[idx];
-    if (!pos) break;
+    for (let i = 0; i < tailLen; i++) {
+      const idx = (player.historyHead - 1 - i + HISTORY_LEN) % HISTORY_LEN;
+      const pos = player.posHistory[idx];
+      if (!pos) break;
 
-    const t = i / tailLen;                          // 0 at player → 1 at tip
-    const alpha = TAIL_BASE_OP * (1 - t) * (1 - t); // quadratic fade
-    const rad   = TAIL_BASE_R * (1 - t) + 0.5;
+      const t     = i / tailLen;
+      const alpha = TAIL_BASE_OP * (1 - t) * (1 - t);        // quadratic fade
+      const scale = TRAIL_SPRITE_DISP_W / TRAIL_SPRITE_SRC_W  // base scale
+                  * (1 - t * 0.7);                             // shrink toward tip
+      const sw = Math.round(TRAIL_SPRITE_SRC_W * scale);
+      const sh = Math.round(TRAIL_SPRITE_SRC_H * scale);
 
-    // Sine wave perturbation over the real historical X position
-    const wave = Math.sin(tailNow * TAIL_FREQ + i * 0.5) * TAIL_AMP * (1 - t);
-    const tx = Math.round(pos.x + wave);
-    const ty = Math.round(pos.y);
+      if (alpha < 0.01 || sw < 2) continue;                   // early skip
 
-    ctx.beginPath();
-    ctx.arc(tx, ty, rad, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
-    ctx.fill();
+      const tx = Math.round(pos.x);
+      const ty = Math.round(player.y + i * TRAIL_VERT_GAP);
+      const frameIdx = i % TRAIL_SPRITE_FRAMES;
+
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = '#0ff';
+      ctx.shadowBlur  = Math.round(8 * (1 - t) + 2);          // glow fades to tip
+      ctx.drawImage(trailSprites[frameIdx], -sw / 2, -sh / 2, sw, sh);
+      ctx.restore();
+    }
   }
 
   // ── Skip during invulnerability flash ───────────────────────────
