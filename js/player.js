@@ -19,9 +19,60 @@ const CANVAS_W = 360;
 const CANVAS_H = 640;
 
 const TRAIL_MAX      = 200;
-const TRAIL_SAMPLE_DIST = 30;   // px travelled between trail samples
+const TRAIL_SAMPLE_DIST = 30;
 
-const INVULN_DURATION = 1500;   // ms of invulnerability after a hit
+const INVULN_DURATION = 1500;
+
+
+/* ===================================================================
+   Sprite data  —  12×12 pixel art character
+   Palette: 0=transparent, 1=cyan body, 2=white visor, 3=dark accent,
+            4=pink accent, 5=magenta
+   =================================================================== */
+
+const S = { _:0, C:1, W:2, D:3, P:4, M:5 };
+
+const SPRITE = [
+  //0 1 2 3 4 5 6 7 8 9 0 1
+  [0,0,0,0,0,1,1,0,0,0,0,0],  //  0 — helmet dome
+  [0,0,0,1,1,1,1,1,1,0,0,0],  //  1 — helmet
+  [0,0,1,1,2,2,2,2,1,1,0,0],  //  2 — visor (white)
+  [0,1,1,1,1,1,1,1,1,1,1,0],  //  3 — shoulders
+  [1,1,1,1,1,1,1,1,1,1,1,1],  //  4 — body
+  [1,1,1,1,1,1,1,1,1,1,1,1],  //  5 — body
+  [1,1,0,1,1,1,1,0,1,1,0,0],  //  6 — arms
+  [0,1,0,1,3,3,1,0,1,0,0,0],  //  7 — torso
+  [0,1,1,0,0,0,0,1,1,0,0,0],  //  8 — waist
+  [0,0,1,0,0,0,0,1,0,0,0,0],  //  9 — legs
+  [0,0,1,0,0,0,0,1,0,0,0,0],  // 10 — legs
+  [0,0,0,3,0,0,3,0,0,0,0,0],  // 11 — feet / thrusters
+];
+
+const PAL = ['', '#0ff', '#fff', '#088', '#f0f', '#f08'];
+
+/* ===================================================================
+   Offscreen canvas — render sprite once, cache for drawImage
+   =================================================================== */
+
+let spriteCanvas = null;
+
+function getSpriteCanvas() {
+  if (!spriteCanvas) {
+    spriteCanvas = document.createElement('canvas');
+    spriteCanvas.width  = 12;
+    spriteCanvas.height = 12;
+    const sctx = spriteCanvas.getContext('2d');
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        const idx = SPRITE[row][col];
+        if (idx === 0) continue;
+        sctx.fillStyle = PAL[idx];
+        sctx.fillRect(col, row, 1, 1);
+      }
+    }
+  }
+  return spriteCanvas;
+}
 
 /* ===================================================================
    State
@@ -31,14 +82,14 @@ let ctx;
 
 const player = {
   x: 180,
-  y: 580,           // fixed vertical position (tunnel scrolls instead)
-  vx: -250,         // horizontal velocity (px/s); flips on tap
-  vy: 0,            // no vertical movement — tunnel provides the scroll
+  y: 580,
+  vx: -250,
+  vy: 0,
   radius: 6,
   lives: 3,
-  invulnTimer: 0,   // ms remaining of invulnerability
-  shakeTimer: 0,    // ms remaining of screen‑shake
-  trail: [],        // ring buffer of { x, y } points
+  invulnTimer: 0,
+  shakeTimer: 0,
+  trail: [],
   trailLastX: 0,
   trailLastY: 0,
 };
@@ -71,20 +122,13 @@ export function reset() {
    =================================================================== */
 
 export function update(dt, speed) {
-  // ── Input ───────────────────────────────────────────────────────
   if (dequeueAction() === ACTION_TAP) {
     player.vx = -player.vx;
   }
 
-  // ── Movement ────────────────────────────────────────────────────
   const s = dt / 1000 * Math.max(speed, 0.01);
   player.x += player.vx * s;
 
-  // Apply y mobility: slight drift toward vertical center for feel
-  // (keeps the player vertically anchored in the play area)
-  // player.y stays fixed — tunnel scrolls below.
-
-  // ── Tunnel wall bounds ──────────────────────────────────────────
   const gap = getGapAtY(player.y);
   if (gap) {
     const minX = gap.left  + player.radius;
@@ -92,22 +136,18 @@ export function update(dt, speed) {
     if (minX < maxX) {
       player.x = Math.max(minX, Math.min(maxX, player.x));
     }
-    // If player is outside gap, push toward center of gap
     if (player.x < minX) player.x = minX;
     if (player.x > maxX) player.x = maxX;
   }
 
-  // ── Invulnerability countdown ───────────────────────────────────
   if (player.invulnTimer > 0) {
     player.invulnTimer = Math.max(0, player.invulnTimer - dt);
   }
 
-  // ── Shake countdown ─────────────────────────────────────────────
   if (player.shakeTimer > 0) {
     player.shakeTimer = Math.max(0, player.shakeTimer - dt);
   }
 
-  // ── Trail sampling ──────────────────────────────────────────────
   const dx = player.x - player.trailLastX;
   const dy = player.y - player.trailLastY;
   if (Math.sqrt(dx * dx + dy * dy) >= TRAIL_SAMPLE_DIST) {
@@ -137,7 +177,7 @@ export function draw(alpha) {
   // ── Trail ───────────────────────────────────────────────────────
   if (player.trail.length > 1) {
     for (let i = 1; i < player.trail.length; i++) {
-      const t = i / player.trail.length; // 0 … 1
+      const t = i / player.trail.length;
       ctx.strokeStyle = `rgba(0, 255, 255, ${t * 0.35})`;
       ctx.lineWidth = t * 3 + 1;
       ctx.beginPath();
@@ -149,7 +189,6 @@ export function draw(alpha) {
 
   // ── Skip drawing during invulnerability flash ───────────────────
   if (player.invulnTimer > 0) {
-    // Flash every 100 ms — skip ~half the frames
     const flashCycle = Math.floor(player.invulnTimer / 100) % 2 === 0;
     if (!flashCycle) {
       if (shaking) ctx.restore();
@@ -157,37 +196,27 @@ export function draw(alpha) {
     }
   }
 
-  // ── Glow ──────────────────────────────────────────────────────
+  // ── Pixel art sprite ────────────────────────────────────────────
+  const px = Math.round(player.x);
+  const py = Math.round(player.y);
+
   ctx.save();
+  ctx.translate(px, py);
+  // Flip horizontally when moving right so the character faces
+  // the direction of travel. (Default vx < 0 = facing left.)
+  if (player.vx > 0) ctx.scale(-1, 1);
+
+  // Glow layer behind the sprite
   ctx.shadowColor = '#0ff';
   ctx.shadowBlur  = 15;
 
-  // ── Body ────────────────────────────────────────────────────────
-  ctx.fillStyle = '#0ff';
-  ctx.beginPath();
-  ctx.arc(Math.round(player.x), Math.round(player.y), player.radius, 0, Math.PI * 2);
-  ctx.fill();
+  // Draw cached pixel‑art sprite (12×12, centered)
+  ctx.drawImage(getSpriteCanvas(), -6, -6);
 
-  ctx.shadowBlur = 0;
-
-  // ── Bright core ─────────────────────────────────────────────────
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(Math.round(player.x), Math.round(player.y), player.radius * 0.4, 0, Math.PI * 2);
-  ctx.fill();
   ctx.restore();
 
   if (shaking) ctx.restore();
 }
-
-/* ===================================================================
-   Collision helpers  (called by collision.js)
-   =================================================================== */
-
-/**
- * Register a hit.  Honour invulnerability window.
- * @returns {boolean} true if the hit was applied, false if ignored.
- */
 export function onHit() {
   if (player.invulnTimer > 0 || player.lives <= 0) return false;
   player.invulnTimer = INVULN_DURATION;
