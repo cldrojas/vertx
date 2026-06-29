@@ -120,7 +120,7 @@ function update(dt) {
           radius: 6,
           isInvulnerable: playerIsInvulnerable(),
         };
-        const walls = tunnelGetWalls();
+        const walls = tunnelGetWalls(pPos.y);
         const coins = collectiblesGetCoins();
         const result = checkCollisions(playerState, walls, coins, {
           lives, score, combo, speed, lastCoinTime,

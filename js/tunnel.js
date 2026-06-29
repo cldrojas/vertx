@@ -22,10 +22,11 @@ const POOL_COUNT    = 6;        // pre‑allocated chunks in the ring
 const SCROLL_SPEED  = 300;      // base px/s (multiplied by game speed)
 
 /**
- * Maximum difference in gap‑centre (px) between consecutive chunks.
- * Keeps the tunnel from zig‑zagging too violently.
+ * Minimum horizontal overlap (px) between consecutive gap openings.
+ * Ensures the player can always transition between chunks without
+ * being caught outside the gap (phantom collision).
  */
-const MAX_CENTRE_DELTA = 144;   // 40 % of canvas width
+const MIN_OVERLAP   = 12;       // minimum px of overlap between consecutive gaps (player diameter)
 
 /* ===================================================================
    State
@@ -64,7 +65,7 @@ function rect(x, y, w, h) {
  * Generate a fresh chunk positioned so its top‑edge is at `yPos`.
  * The gap centre is constrained relative to the previous chunk (if any).
  */
-function generateChunk(yPos, prevCentre) {
+function generateChunk(yPos, prevChunk) {
   const gapWidth = MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP);
 
   // Horizontal centre for the gap
@@ -72,9 +73,13 @@ function generateChunk(yPos, prevCentre) {
   const halfGap = gapWidth / 2;
   const margin  = halfGap + 6;              // keep away from canvas edges
 
-  if (prevCentre !== undefined) {
-    const lo = Math.max(margin, prevCentre - MAX_CENTRE_DELTA);
-    const hi = Math.min(CANVAS_W - margin, prevCentre + MAX_CENTRE_DELTA);
+  if (prevChunk) {
+    const prevHalf  = prevChunk.gapWidth / 2;
+    const prevLeft  = prevChunk.gapCentre - prevHalf;
+    const prevRight = prevChunk.gapCentre + prevHalf;
+    // Guarantee at least MIN_OVERLAP between consecutive gaps
+    const lo = Math.max(margin, prevLeft + MIN_OVERLAP - halfGap);
+    const hi = Math.min(CANVAS_W - margin, prevRight - MIN_OVERLAP + halfGap);
     gapCentre = lo + Math.random() * (hi - lo);
   } else {
     gapCentre = margin + Math.random() * (CANVAS_W - margin * 2);
@@ -103,7 +108,7 @@ function recycleChunk(chunk) {
   const idx    = sorted.indexOf(chunk);
   const next   = idx < sorted.length - 1 ? sorted[idx + 1] : sorted[0];
 
-  const fresh = generateChunk(highest.y - CHUNK_HEIGHT, next.gapCentre);
+  const fresh = generateChunk(highest.y - CHUNK_HEIGHT, next);
   chunk.id         = fresh.id;
   chunk.y          = fresh.y;
   chunk.gapCentre  = fresh.gapCentre;
@@ -126,11 +131,11 @@ export function reset() {
   nextId = 0;
 
   // Generate initial set: one behind viewport, rest below
-  let prevCentre;
+  let prevChunk = null;
   for (let i = 0; i < POOL_COUNT; i++) {
     const yPos = -CHUNK_HEIGHT + i * CHUNK_HEIGHT;
-    const chk  = generateChunk(yPos, prevCentre);
-    prevCentre = chk.gapCentre;
+    const chk  = generateChunk(yPos, prevChunk);
+    prevChunk = chk;
     chunks.push(chk);
   }
 }
@@ -217,12 +222,17 @@ export function draw(alpha) {
    =================================================================== */
 
 /**
+ * @param {number} [playerY]  – if provided, only walls from the chunk
+ *   that contains this y‑coordinate are returned (prevents phantom
+ *   collisions at chunk boundaries where the adjacent chunk's walls
+ *   would overlap the player clamped to the current chunk's gap).
  * @returns {{x:number,y:number,w:number,h:number}[]}
- *   Flat array of all active wall segments.
+ *   Flat array of wall segments for the chunk containing playerY (or all if omitted).
  */
-export function getWalls() {
+export function getWalls(playerY) {
   const out = [];
   for (const ch of chunks) {
+    if (playerY !== undefined && (playerY < ch.y || playerY >= ch.y + CHUNK_HEIGHT)) continue;
     for (const w of ch.leftWalls)  out.push(w);
     for (const w of ch.rightWalls) out.push(w);
   }
