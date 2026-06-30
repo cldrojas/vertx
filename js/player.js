@@ -20,7 +20,8 @@ const CANVAS_H = 640;
 const INVULN_DURATION = 1500;
 
 /* ── Diamond shape ────────────────────────────────────────────── */
-const DIAMOND_SIZE = 14;        // half-size (radius) of the diamond
+const DIAMOND_HEIGHT = 14;       // half-height (vertical radius)
+const DIAMOND_WIDTH = 9;         // half-width — smaller = más fino
 
 /* ── Diamond trail ────────────────────────────────────────────── */
 const TRAIL_MIN_LEN = 24;       // min trail length (px) at speed 1.0
@@ -126,15 +127,16 @@ export function update(dt, speed) {
  * @param {CanvasRenderingContext2D} _ctx
  * @param {number} cx  – centre x
  * @param {number} cy  – centre y
- * @param {number} s   – half-size (radius)
+ * @param {number} hw  – half-width (horizontal radius)
+ * @param {number} hh  – half-height (vertical radius)
  * @param {boolean} fill  – fill the diamond or stroke only
  */
-function drawDiamond(_ctx, cx, cy, s, fill) {
+function drawDiamond(_ctx, cx, cy, hw, hh, fill) {
   _ctx.beginPath();
-  _ctx.moveTo(cx, cy - s);       // top
-  _ctx.lineTo(cx + s, cy);       // right
-  _ctx.lineTo(cx, cy + s);       // bottom
-  _ctx.lineTo(cx - s, cy);       // left
+  _ctx.moveTo(cx, cy - hh);       // top
+  _ctx.lineTo(cx + hw, cy);       // right
+  _ctx.lineTo(cx, cy + hh);       // bottom
+  _ctx.lineTo(cx - hw, cy);       // left
   _ctx.closePath();
   if (fill) _ctx.fill();
   _ctx.stroke();
@@ -167,10 +169,12 @@ export function draw(/* alpha */) {
   for (let i = 1; i < SEGS; i++) {
     const t = i / SEGS;
     const segY = Math.round(player.y + i * SEG_H);
-    const size = Math.round(DIAMOND_SIZE * boostScale * (1 - t * 0.55));
+    const factor = boostScale * (1 - t * 0.55);
+    const hh = Math.round(DIAMOND_HEIGHT * factor);
+    const hw = Math.round(DIAMOND_WIDTH * factor);
     const alpha = 0.55 * (1 - t) * (1 - t);
 
-    if (alpha < 0.01 || size < 2) continue;
+    if (alpha < 0.01 || hh < 2) continue;
 
     const wave = Math.sin(player.animTimer * 0.008 + i * 0.9) * (1 - t) * 2;
 
@@ -180,7 +184,7 @@ export function draw(/* alpha */) {
     ctx.shadowBlur  = Math.round(10 * (1 - t) + 2);
     ctx.strokeStyle = '#0ff';
     ctx.lineWidth   = 1.5;
-    drawDiamond(ctx, player.x + wave, segY, size, false);
+    drawDiamond(ctx, player.x + wave, segY, hw, hh, false);
     ctx.restore();
   }
 
@@ -196,7 +200,8 @@ export function draw(/* alpha */) {
   // ── Main diamond ────────────────────────────────────────────────
   const px = Math.round(player.x);
   const py = Math.round(player.y);
-  const ds = Math.round(DIAMOND_SIZE * boostScale);
+  const dsH = Math.round(DIAMOND_HEIGHT * boostScale);
+  const dsW = Math.round(DIAMOND_WIDTH * boostScale);
 
   ctx.save();
   ctx.translate(px, py);
@@ -207,18 +212,18 @@ export function draw(/* alpha */) {
 
   // Outer diamond (cyan fill)
   ctx.fillStyle = '#0ff';
-  drawDiamond(ctx, 0, 0, ds, true);
+  drawDiamond(ctx, 0, 0, dsW, dsH, true);
 
   // Inner accent diamond (darker shade, no glow)
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#088';
-  drawDiamond(ctx, 0, 0, Math.round(ds * 0.45), true);
+  drawDiamond(ctx, 0, 0, Math.round(dsW * 0.45), Math.round(dsH * 0.45), true);
 
   // Thin bright border
   ctx.shadowBlur = 0;
   ctx.strokeStyle = '#8ff';
   ctx.lineWidth   = 1;
-  drawDiamond(ctx, 0, 0, ds, false);
+  drawDiamond(ctx, 0, 0, dsW, dsH, false);
 
   ctx.restore();
 
