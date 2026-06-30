@@ -66,22 +66,41 @@ function buildFramesFromNinja() {
   const runRight = [];
   for (let i = 0; i < ANIM_FRAMES; i++) {
     const imgIdx = i % NINJA_FRAMES;
-    runLeft.push(scaleCanvas(ninjaImages[imgIdx], dw, dh, false));
-    runRight.push(scaleCanvas(ninjaImages[imgIdx], dw, dh, true));
+    const img = ninjaImages[imgIdx];
+
+    if (img instanceof Image && (!img.complete || img.naturalWidth === 0)) {
+      // Failed image — draw cyan placeholder
+      const pv = document.createElement('canvas');
+      pv.width = dw; pv.height = dh;
+      const ps = pv.getContext('2d');
+      ps.fillStyle = '#0ff';
+      ps.fillRect(0, 0, dw, dh);
+      runLeft.push(pv);
+      const pv2 = document.createElement('canvas');
+      pv2.width = dw; pv2.height = dh;
+      const ps2 = pv2.getContext('2d');
+      ps2.translate(dw, 0); ps2.scale(-1, 1);
+      ps2.fillStyle = '#0ff';
+      ps2.fillRect(0, 0, dw, dh);
+      runRight.push(pv2);
+    } else {
+      runLeft.push(scaleCanvas(img, dw, dh, false));
+      runRight.push(scaleCanvas(img, dw, dh, true));
+    }
   }
 
   frames = {
-    runLeft,
-    runRight,
-    boostLeft: runLeft[0],
-    boostRight: runRight[0],
+    runLeft, runRight,
+    boostLeft: runLeft[0], boostRight: runRight[0],
   };
   ninjaReady = true;
 }
 
 function checkAllLoaded() {
   for (let i = 0; i < NINJA_FRAMES; i++) {
-    if (!ninjaImages[i] || !ninjaImages[i].complete) return;
+    const img = ninjaImages[i];
+    // Image that errored has complete=true but naturalWidth=0 — still counts as "done"
+    if (!img || !img.complete) return;
   }
   buildFramesFromNinja();
 }
@@ -89,9 +108,10 @@ function checkAllLoaded() {
 function loadNinjaFrames() {
   for (let i = 0; i < NINJA_FRAMES; i++) {
     const img = new Image();
-    img.onload = checkAllLoaded;
+    img.onload  = checkAllLoaded;
     img.onerror = () => {
-      console.warn(`[player] Failed to load sprite ${i + 1}.png`);
+      console.warn(`[player] Sprite ${i + 1}.png failed — using fallback`);
+      checkAllLoaded();
     };
     ninjaImages.push(img);
     img.src = `sprites/${i + 1}.png`;
@@ -238,6 +258,11 @@ export function draw(alpha) {
     }
   }
 
+  // ── Guard: skip if sprites not loaded ────────────────────────────
+  if (!frames) {
+    if (shaking) ctx.restore();
+    return;
+  }
   // ── Select frame ───────────────────────────────────────────────
   const side       = player.x < SCREEN_HALF ? 'Left' : 'Right';
   const runArr     = side === 'Left' ? frames.runLeft  : frames.runRight;
