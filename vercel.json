@@ -1,6 +1,5 @@
 {
-  "framework": null,
-  "devCommand": null,
-  "buildCommand": null,
-  "outputDirectory": "."
+  "framework": "vite",
+  "buildCommand": "npx vite build",
+  "outputDirectory": "dist"
 }
