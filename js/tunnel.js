@@ -14,10 +14,10 @@
 
 const CANVAS_W      = 360;
 const CANVAS_H      = 640;
-const WALL_WIDTH    = 40;       // minimum wall thickness from edges
+const WALL_WIDTH    = 50;       // minimum wall thickness from edges
 const CHUNK_HEIGHT  = 800;      // height of one tunnel segment
-const MIN_GAP       = 48;       // narrowest horizontal passage
-const MAX_GAP       = 100;      // widest horizontal passage
+const MIN_GAP       = 75;       // narrowest horizontal passage
+const MAX_GAP       = 150;      // widest horizontal passage
 const POOL_COUNT    = 6;        // pre‑allocated chunks in the ring
 const SCROLL_SPEED  = 300;      // base px/s (multiplied by game speed)
 
@@ -26,7 +26,7 @@ const SCROLL_SPEED  = 300;      // base px/s (multiplied by game speed)
  * Ensures the player can always transition between chunks without
  * being caught outside the gap (phantom collision).
  */
-const MIN_OVERLAP   = 12;       // minimum px of overlap between consecutive gaps (player diameter)
+const MIN_OVERLAP   = 24;       // minimum px of overlap between consecutive gaps (player diameter)
 
 /* ===================================================================
    State

@@ -22,14 +22,14 @@ const INVULN_DURATION = 1500;
 /* ── Vertical comet tail ───────────────────────────────────────── */
 const TAIL_MIN_LEN = 20;       // min height px (speed 1.0)
 const TAIL_MAX_LEN = 80;       // max height px (speed 3.0)
-const TAIL_BASE_W  = 14;       // width at player (px)
-const TAIL_TIP_W  = 4;        // width at tip (px)
+const TAIL_BASE_W  = 35;       // width at player (px)
+const TAIL_TIP_W  = 10;        // width at tip (px)
 
 /* ── Ninja sprite config ───────────────────────────────────────── */
 const NINJA_FRAMES = 8;
 const NINJA_SRC_W  = 302;      // source PNG width
 const NINJA_SRC_H  = 332;      // source PNG height
-const NINJA_DISP_W = 30;       // display width on canvas
+const NINJA_DISP_W = 75;       // display width on canvas
 
 /* ── Player animation ──────────────────────────────────────────── */
 const ANIM_FRAMES  = 6;
@@ -129,7 +129,7 @@ const player = {
   y: 580,
   vx: -250,
   vy: 0,
-  radius: 6,
+  radius: 12,
   lives: 3,
   invulnTimer: 0,
   shakeTimer: 0,
@@ -153,7 +153,7 @@ export function reset() {
   player.y           = 580;
   player.vx          = -250;
   player.vy          = 0;
-  player.radius      = 6;
+  player.radius      = 12;
   player.lives       = 3;
   player.invulnTimer = 0;
   player.shakeTimer  = 0;

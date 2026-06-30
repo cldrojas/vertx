@@ -57,6 +57,7 @@ export function reset() {}
  *
  * @typedef {Object} CollisionResult
  * @property {boolean} wallHit
+ * @property {boolean} obstacleHit
  * @property {boolean} coinCollected
  * @property {number}  coinCollectedIndex
  * @property {number}  isNewLives
@@ -70,13 +71,15 @@ export function reset() {}
  *
  * @param {PlayerState} playerState
  * @param {WallRect[]}  walls
+ * @param {Object[]}    obstacles
  * @param {CoinState[]} coins
  * @param {GameState}   gameState
  * @returns {CollisionResult}
  */
-export function check(playerState, walls, coins, gameState) {
+export function check(playerState, walls, obstacles, coins, gameState) {
   const result = {
     wallHit: false,
+    obstacleHit: false,
     coinCollected: false,
     coinCollectedIndex: -1,
     isNewLives: gameState.lives,
@@ -99,6 +102,18 @@ export function check(playerState, walls, coins, gameState) {
       if (aabbOverlap(pr, wall)) {
         result.wallHit = true;
         playerOnHit();                            // sets invulnTimer, decrements lives
+        result.isNewLives = Math.max(0, gameState.lives - 1);
+        break;
+      }
+    }
+  }
+
+  // ── Obstacle collision (AABB) ──────────────────────────────────
+  if (!playerState.isInvulnerable && gameState.lives > 0) {
+    for (const obs of obstacles) {
+      if (aabbOverlap(pr, obs)) {
+        result.obstacleHit = true;
+        playerOnHit();
         result.isNewLives = Math.max(0, gameState.lives - 1);
         break;
       }

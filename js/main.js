@@ -15,6 +15,7 @@ import { ACTION_TAP, init as initInput, dequeueAction } from './input.js';
 import { init as initPlayer, update as updatePlayer,
          draw as drawPlayer,   reset as resetPlayer,
          getPosition as getPlayerPosition,
+         getBounds as getPlayerBounds,
          isInvulnerable as playerIsInvulnerable } from './player.js';
 import { init as initTunnel, update as updateTunnel,
          draw as drawTunnel,  reset as resetTunnel,
@@ -23,6 +24,9 @@ import { init as initCollectibles, update as updateCollectibles,
          draw as drawCollectibles, reset as resetCollectibles,
          getCoins as collectiblesGetCoins,
          drawCollectibleEffects } from './collectibles.js';
+import { init as initObstacles, update as updateObstacles,
+         draw as drawObstacles, reset as resetObstacles,
+         getObstacles } from './obstacles.js';
 import { init as initCollision, check as checkCollisions,
          reset as resetCollision } from './collision.js';
 import { init as initHUD, drawGameHUD, setSpeed as hudSetSpeed } from './hud.js';
@@ -110,19 +114,21 @@ function update(dt) {
       updatePlayer(dt, speed);
       updateTunnel(dt, speed);
       updateCollectibles(dt, speed);
+      updateObstacles(dt, speed);
 
       // ── Collision detection ──────────────────────────────────────
       {
-        const pPos = getPlayerPosition();
+        const pBounds = getPlayerBounds();
         const playerState = {
-          x: pPos.x,
-          y: pPos.y,
-          radius: 6,
+          x: pBounds.x,
+          y: pBounds.y,
+          radius: pBounds.radius,
           isInvulnerable: playerIsInvulnerable(),
         };
-        const walls = tunnelGetWalls(pPos.y);
+        const walls = tunnelGetWalls(pBounds.y);
         const coins = collectiblesGetCoins();
-        const result = checkCollisions(playerState, walls, coins, {
+        const obstacles = getObstacles();
+        const result = checkCollisions(playerState, walls, obstacles, coins, {
           lives, score, combo, speed, lastCoinTime,
         });
 
@@ -180,6 +186,7 @@ function render(alpha) {
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       drawTunnel(alpha);
       drawCollectibles(alpha);
+      drawObstacles(alpha);
       drawCollectibleEffects(alpha);
       drawPlayer(alpha);
       hudSetSpeed(speed);
@@ -315,6 +322,7 @@ function resetGame() {
   resetPlayer();
   resetTunnel();
   resetCollectibles();
+  resetObstacles();
   resetCollision();
 }
 
@@ -360,6 +368,7 @@ function init() {
   initPlayer(ctx);
   initTunnel(ctx);
   initCollectibles(ctx);
+  initObstacles(ctx);
   initCollision();
   initHUD(ctx);
 
