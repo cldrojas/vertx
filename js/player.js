@@ -164,7 +164,7 @@ export function draw(/* alpha */) {
   // ── Diamond trail — fading diamond outlines ─────────────────────
   const speedNorm = (player.currentSpeed - 1) / (3 - 1);
   const trailLen = TRAIL_MIN_LEN + speedNorm * (TRAIL_MAX_LEN - TRAIL_MIN_LEN);
-  const SEGS = Math.max(4, Math.round(trailLen / SEG_H));
+  const SEGS = Math.max(6, Math.round(trailLen / SEG_H));
 
   for (let i = 1; i < SEGS; i++) {
     const t = i / SEGS;
