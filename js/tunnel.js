@@ -96,6 +96,8 @@ function generateChunk(yPos, prevChunk) {
     gapWidth,
     leftWalls:  [rect(0,           yPos, gapLeft,          CHUNK_HEIGHT)],
     rightWalls: [rect(gapRight,    yPos, CANVAS_W - gapRight, CHUNK_HEIGHT)],
+    leftBuilding:  generateBuildingData(0, gapLeft, true),
+    rightBuilding: generateBuildingData(gapRight, CANVAS_W - gapRight, false),
   };
 }
 
@@ -116,6 +118,8 @@ function recycleChunk(chunk) {
   chunk.gapWidth   = fresh.gapWidth;
   chunk.leftWalls  = fresh.leftWalls;
   chunk.rightWalls = fresh.rightWalls;
+  chunk.leftBuilding  = fresh.leftBuilding;
+  chunk.rightBuilding = fresh.rightBuilding;
 }
 
 /* ===================================================================
@@ -155,12 +159,13 @@ export function update(dt, speed) {
   }
 
 
-  // Recycle chunks that have scrolled past the bottom of the viewport
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks[i].y > CANVAS_H) {
-      recycleChunk(chunks[i]);
-    }
+  // Recycle chunks from bottom to top to maintain gap constraint chain
+  const toRecycle = chunks.filter(ch => ch.y > CANVAS_H);
+  toRecycle.sort((a, b) => b.y - a.y);
+  for (const ch of toRecycle) {
+    recycleChunk(ch);
   }
+
 }
 
 /* ===================================================================
@@ -188,60 +193,37 @@ const KANA_SIGNS = [
   "タテ", "ヨコ", "ソラ", "ユメ", "ミライ"
 ];
 
-// Parallax configuration
-const PARALLAX_WINDOW_FACTOR = 0.85;  // Windows move 85% of building speed
-const PARALLAX_SIGN_FACTOR = 0.72;    // Neon signs move 72% of building speed
-const PARALLAX_AC_FACTOR = 0.88;      // AC units move 88% of building speed
-
-let buildingCache = new Map();
 let timeOffset = 0;
 
-function getBuildingKey(chunk, isLeft) {
-  return chunk.id + "-" + (isLeft ? "L" : "R");
-}
-
-function generateBuildingGeometry(wall, chunk) {
-  const isLeftWall = wall.x === 0;
-  const key = getBuildingKey(chunk, isLeftWall);
-  if (buildingCache.has(key)) {
-    return buildingCache.get(key);
-  }
-
-  const width = wall.w;
-  const height = wall.h;
-  const baseX = wall.x;
-
-  // Building structure — all y-positions stored RELATIVE to building top (0)
-  const floorRelHeight = 40 + Math.random() * 20; // 40-60px per floor
-  const numFloors = Math.max(3, Math.floor(height / floorRelHeight));
-  const actualFloorHeight = height / numFloors;
+function generateBuildingData(baseX, width, isLeftWall) {
+  const floorRelHeight = 40 + Math.random() * 20;
+  const numFloors = Math.max(3, Math.floor(CHUNK_HEIGHT / floorRelHeight));
+  const actualFloorHeight = CHUNK_HEIGHT / numFloors;
 
   const floors = [];
   for (let f = 0; f < numFloors; f++) {
     const floorRY = f * actualFloorHeight;
 
-    // Windows — spread evenly across building width
-    const numWindows = Math.max(2, Math.min(Math.floor(width / 22), 6));
-    const windowWidth = 10;
-    const windowHeight = 16;
+    // Windows evenly spread
+    const numWindows = Math.max(2, Math.min(Math.floor(width / 26), 6));
+    const windowWidth = 14;
+    const windowHeight = 20;
     const windowSpacing = (width - numWindows * windowWidth) / (numWindows + 1);
 
     const windows = [];
     for (let w = 0; w < numWindows; w++) {
-      // Same formula for both walls: position from left edge going right
       const rx = windowSpacing + w * (windowWidth + windowSpacing);
       windows.push({
         rx,
         ry: floorRY + (actualFloorHeight - windowHeight) / 2,
-        w: windowWidth,
-        h: windowHeight,
+        w: windowWidth, h: windowHeight,
         lit: Math.random() < 0.6,
         color: NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)],
         blinkPhase: Math.random() * Math.PI * 2,
       });
     }
 
-    // Neon sign — on the INNER edge (facing the gap)
+    // Neon sign on the INNER edge (facing the gap)
     let neonSign = null;
     if (Math.random() < 0.18) {
       const signText = Math.random() < 0.6
@@ -250,7 +232,7 @@ function generateBuildingGeometry(wall, chunk) {
       neonSign = {
         text: signText,
         color: NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)],
-        rx: isLeftWall ? width - 4 : 4, // inner edge
+        rx: isLeftWall ? width - 4 : 4,
         ry: floorRY + actualFloorHeight * 0.25,
         width: Math.min(width - 8, 80),
         phase: Math.random() * Math.PI * 2,
@@ -258,59 +240,38 @@ function generateBuildingGeometry(wall, chunk) {
       };
     }
 
-    // AC Unit / ventilation — on the OUTER edge (away from gap)
+    // AC unit on the OUTER edge (away from gap)
     let acUnit = null;
     if (Math.random() < 0.15) {
       acUnit = {
-        rx: isLeftWall ? 2 : width - 18, // outer edge
+        rx: isLeftWall ? 2 : width - 18,
         ry: floorRY + actualFloorHeight * 0.12,
-        w: 16,
-        h: 20,
+        w: 20, h: 24,
       };
     }
 
-    floors.push({
-      ry: floorRY,
-      height: actualFloorHeight,
-      windows,
-      neonSign,
-      acUnit,
+    floors.push({ ry: floorRY, height: actualFloorHeight, windows, neonSign, acUnit });
+  }
+
+  // Roof spires
+  const roofDetails = [];
+  const numSpires = Math.max(1, Math.min(Math.floor(width / 28), 4));
+  for (let s = 0; s < numSpires; s++) {
+    roofDetails.push({
+      rx: (s + 0.5) * (width / numSpires),
+      ry: 0,
+      height: 8 + Math.random() * 14,
+      halfWidth: 2 + Math.random() * 2,
+      hasAntenna: Math.random() < 0.4,
     });
   }
 
-  // Roof details — spires/antennas
-  const roofDetails = [];
-  if (numFloors > 0) {
-    const numSpires = Math.max(1, Math.min(Math.floor(width / 28), 4));
-    for (let s = 0; s < numSpires; s++) {
-      roofDetails.push({
-        rx: (s + 0.5) * (width / numSpires),
-        ry: 0,
-        height: 8 + Math.random() * 14,
-        halfWidth: 2 + Math.random() * 2,
-        hasAntenna: Math.random() < 0.4,
-      });
-    }
-  }
-
-  const building = {
-    baseX,
-    generationChunkY: chunk.y,
-    width,
-    height,
-    isLeftWall,
-    floors,
-    roofDetails,
-  };
-
-  buildingCache.set(key, building);
-  return building;
+  return { baseX, width, isLeftWall, floors, roofDetails };
 }
 
 function drawBuilding(ctx, building, chunkY, time) {
-  const { baseX, generationChunkY, width, height, isLeftWall, floors, roofDetails } = building;
+  const { baseX, width, isLeftWall, floors, roofDetails } = building;
   const baseY = chunkY;
-  const scrollSinceGen = chunkY - generationChunkY; // for parallax: how far we have scrolled since this building was generated
 
   ctx.save();
 
@@ -320,7 +281,7 @@ function drawBuilding(ctx, building, chunkY, time) {
   baseGradient.addColorStop(0.5, "#0f0f1a");
   baseGradient.addColorStop(1, "#0a0a0f");
   ctx.fillStyle = baseGradient;
-  ctx.fillRect(baseX, baseY, width, height);
+  ctx.fillRect(baseX, baseY, width, CHUNK_HEIGHT);
 
   // ── Draw each floor ───────────────────────────────────────────────
   for (const floor of floors) {
@@ -334,13 +295,12 @@ function drawBuilding(ctx, building, chunkY, time) {
     ctx.fillStyle = "rgba(0, 255, 255, 0.12)";
     ctx.fillRect(baseX - 1, ledgeY - 2, width + 2, 1);
 
-    // Windows — with PARALLAX (move slower than building)
+    // Windows
     for (const win of floor.windows) {
-      const winParallaxY = floorY + (win.ry - floor.ry) + scrollSinceGen * (1 - PARALLAX_WINDOW_FACTOR);
       const px = baseX + win.rx;
-      const py = winParallaxY;
+      const py = floorY + win.ry - floor.ry;
 
-      const blinkIntensity = 0.7 + 0.3 * Math.sin(time * 3 + win.blinkPhase);
+      const blinkIntensity = 0.2 + 0.15 * Math.sin(time * 3 + win.blinkPhase);
 
       // Frame
       ctx.fillStyle = "#1a1a2e";
@@ -352,7 +312,7 @@ function drawBuilding(ctx, building, chunkY, time) {
         const g = parseInt(win.color.slice(3, 5), 16);
         const b = parseInt(win.color.slice(5, 7), 16);
         ctx.shadowColor = win.color;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 3;
         ctx.fillStyle = "rgba(" + r + "," + g + "," + b + "," + blinkIntensity + ")";
         ctx.fillRect(px, py, win.w, win.h);
         ctx.shadowBlur = 0;
@@ -368,10 +328,10 @@ function drawBuilding(ctx, building, chunkY, time) {
       }
     }
 
-    // Neon sign — with PARALLAX (moves even slower)
+    // Neon sign
     if (floor.neonSign) {
       const sign = floor.neonSign;
-      const signParallaxY = floorY + (sign.ry - floor.ry) + scrollSinceGen * (1 - PARALLAX_SIGN_FACTOR);
+      const signY = floorY + sign.ry - floor.ry;
       const pulseIntensity = 0.7 + 0.3 * Math.sin(time * 4 + sign.phase);
       const glowBlur = 12 + 10 * pulseIntensity;
 
@@ -379,7 +339,7 @@ function drawBuilding(ctx, building, chunkY, time) {
       const plateW = Math.min(sign.width, sign.text.length * 12 + 6);
       const plateX = isLeftWall ? baseX + width - plateW - 2 : baseX + 2;
       ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(plateX, signParallaxY - 2, plateW, 24);
+      ctx.fillRect(plateX, signY - 2, plateW, 24);
 
       // Glowing text
       ctx.save();
@@ -387,30 +347,30 @@ function drawBuilding(ctx, building, chunkY, time) {
       ctx.shadowBlur = glowBlur;
       ctx.fillStyle = sign.color;
       ctx.font = sign.isKanji
-        ? "bold 18px \"Noto Sans JP\", \"Hiragino Kaku Gothic ProN\", sans-serif"
-        : "bold 13px \"Noto Sans JP\", \"Hiragino Kaku Gothic ProN\", sans-serif";
+        ? "bold 20px \"Noto Sans JP\", \"Hiragino Kaku Gothic ProN\", sans-serif"
+        : "bold 15px \"Noto Sans JP\", \"Hiragino Kaku Gothic ProN\", sans-serif";
       ctx.textAlign = isLeftWall ? "right" : "left";
       ctx.textBaseline = "top";
       ctx.globalAlpha = 0.9 * pulseIntensity;
-      ctx.fillText(sign.text, isLeftWall ? baseX + width - 4 : baseX + 4, signParallaxY);
+      ctx.fillText(sign.text, isLeftWall ? baseX + width - 4 : baseX + 4, signY);
       ctx.restore();
     }
 
-    // AC Unit / ventilation — with PARALLAX
+    // AC Unit / ventilation
     if (floor.acUnit) {
       const ac = floor.acUnit;
-      const acParallaxY = floorY + (ac.ry - floor.ry) + scrollSinceGen * (1 - PARALLAX_AC_FACTOR);
+      const acY = floorY + ac.ry - floor.ry;
       const acX = baseX + ac.rx;
 
       // Body
       ctx.fillStyle = "#2a2a3e";
-      ctx.fillRect(acX, acParallaxY, ac.w, ac.h);
+      ctx.fillRect(acX, acY, ac.w, ac.h);
 
       // Grill lines
       ctx.strokeStyle = "rgba(0,255,255,0.25)";
       ctx.lineWidth = 0.5;
       for (let g = 0; g < 4; g++) {
-        const gy = acParallaxY + 4 + g * 4;
+        const gy = acY + 4 + g * 4;
         ctx.beginPath();
         ctx.moveTo(acX + 2, gy);
         ctx.lineTo(acX + ac.w - 2, gy);
@@ -419,14 +379,14 @@ function drawBuilding(ctx, building, chunkY, time) {
 
       // Vent glow
       ctx.fillStyle = "rgba(255,20,147,0.35)";
-      ctx.fillRect(isLeftWall ? acX : acX + ac.w - 3, acParallaxY + 4, 3, ac.h - 8);
+      ctx.fillRect(isLeftWall ? acX : acX + ac.w - 3, acY + 4, 3, ac.h - 8);
 
       // Ventilation duct going upward
       ctx.strokeStyle = "rgba(0,255,255,0.15)";
       ctx.lineWidth = 2;
       ctx.setLineDash([2, 3]);
       ctx.beginPath();
-      ctx.moveTo(acX + ac.w / 2, acParallaxY);
+      ctx.moveTo(acX + ac.w / 2, acY);
       ctx.lineTo(acX + ac.w / 2, baseY);
       ctx.stroke();
       ctx.setLineDash([]);
@@ -480,99 +440,97 @@ function drawBuilding(ctx, building, chunkY, time) {
 
   // ── Building edge neon accent (vertical strip at gap side) ───────
   const edgeX = isLeftWall ? baseX + width - 1 : baseX;
-  const edgeGradient = ctx.createLinearGradient(edgeX, baseY, edgeX, baseY + height);
+  const edgeGradient = ctx.createLinearGradient(edgeX, baseY, edgeX, baseY + CHUNK_HEIGHT);
   edgeGradient.addColorStop(0, "rgba(0,255,255,0)");
   edgeGradient.addColorStop(0.3, "rgba(0,255,255,0.35)");
   edgeGradient.addColorStop(0.7, "rgba(255,20,147,0.35)");
   edgeGradient.addColorStop(1, "rgba(0,255,255,0)");
   ctx.fillStyle = edgeGradient;
-  ctx.fillRect(edgeX, baseY, 2, height);
+  ctx.fillRect(edgeX, baseY, 2, CHUNK_HEIGHT);
 
   ctx.restore();
 }
 
 export function draw(alpha) {
-  // Use real elapsed time for animations
-  timeOffset += (16 * alpha) / 1000; // approximate seconds
+  timeOffset += (16 * alpha) / 1000;
 
-  // Only draw chunks that overlap the viewport
   const visTop    = -CHUNK_HEIGHT;
   const visBottom = CANVAS_H + CHUNK_HEIGHT;
 
+  // PASS 1: Draw all buildings
+  for (const ch of chunks) {
+    if (ch.y + CHUNK_HEIGHT < visTop || ch.y > visBottom) continue;
+    drawBuilding(ctx, ch.leftBuilding, ch.y, timeOffset);
+    drawBuilding(ctx, ch.rightBuilding, ch.y, timeOffset);
+  }
+
+  // PASS 2: Draw all gap decorations ON TOP of buildings
   for (const ch of chunks) {
     if (ch.y + CHUNK_HEIGHT < visTop || ch.y > visBottom) continue;
 
-    // ── Japanese Building Walls ───────────────────────────────────
-    for (const wall of [...ch.leftWalls, ...ch.rightWalls]) {
-      const building = generateBuildingGeometry(wall, ch);
-      drawBuilding(ctx, building, ch.y, timeOffset);
-    }
+    const gapL = ch.gapCentre - ch.gapWidth / 2;
+    const gapR = ch.gapCentre + ch.gapWidth / 2;
+    const midY = ch.y + CHUNK_HEIGHT * 0.5;
+    const brk = 16;
 
-    const gapL  = ch.gapCentre - ch.gapWidth / 2;
-    const gapR  = ch.gapCentre + ch.gapWidth / 2;
-    const midY  = ch.y + CHUNK_HEIGHT * 0.5;
-    const brk   = 16;
+    // Gap edge neon strips
+    const stripGradL = ctx.createLinearGradient(gapL, ch.y, gapL, ch.y + CHUNK_HEIGHT);
+    stripGradL.addColorStop(0, "rgba(0,255,255,0)");
+    stripGradL.addColorStop(0.5, "rgba(0,255,255,0.5)");
+    stripGradL.addColorStop(1, "rgba(255,20,147,0)");
+    ctx.fillStyle = stripGradL;
+    ctx.fillRect(gapL - 2, ch.y, 3, CHUNK_HEIGHT);
 
-    // ── Corner brackets (animated glow) ─────────────────────────
+    const stripGradR = ctx.createLinearGradient(gapR, ch.y, gapR, ch.y + CHUNK_HEIGHT);
+    stripGradR.addColorStop(0, "rgba(255,20,147,0)");
+    stripGradR.addColorStop(0.5, "rgba(255,20,147,0.5)");
+    stripGradR.addColorStop(1, "rgba(0,255,255,0)");
+    ctx.fillStyle = stripGradR;
+    ctx.fillRect(gapR - 1, ch.y, 3, CHUNK_HEIGHT);
+
+        // Corner brackets (canvas edges)
     const bracketPulse = 0.6 + 0.4 * Math.sin(timeOffset * 5);
     ctx.strokeStyle = "rgba(0,255,255," + bracketPulse + ")";
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = "#0ff";
     ctx.shadowBlur  = 8 * bracketPulse;
 
-    // Top-left
+    // Top-left (canvas corner)
     ctx.beginPath();
-    ctx.moveTo(gapL, midY - brk);
-    ctx.lineTo(gapL, midY);
-    ctx.lineTo(gapL + brk, midY);
+    ctx.moveTo(0, 24);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(24, 0);
     ctx.stroke();
 
-    // Top-right
+    // Top-right (canvas corner)
     ctx.beginPath();
-    ctx.moveTo(gapR, midY - brk);
-    ctx.lineTo(gapR, midY);
-    ctx.lineTo(gapR - brk, midY);
+    ctx.moveTo(CANVAS_W - 24, 0);
+    ctx.lineTo(CANVAS_W, 0);
+    ctx.lineTo(CANVAS_W, 24);
     ctx.stroke();
 
-    // Bottom-left
-    const botY = ch.y + CHUNK_HEIGHT;
+    // Bottom-left (canvas corner)
     ctx.beginPath();
-    ctx.moveTo(gapL, botY);
-    ctx.lineTo(gapL, botY + brk);
-    ctx.lineTo(gapL + brk, botY + brk);
+    ctx.moveTo(0, CANVAS_H - 24);
+    ctx.lineTo(0, CANVAS_H);
+    ctx.lineTo(24, CANVAS_H);
     ctx.stroke();
 
-    // Bottom-right
+    // Bottom-right (canvas corner)
     ctx.beginPath();
-    ctx.moveTo(gapR, botY);
-    ctx.lineTo(gapR, botY + brk);
-    ctx.lineTo(gapR - brk, botY + brk);
+    ctx.moveTo(CANVAS_W - 24, CANVAS_H);
+    ctx.lineTo(CANVAS_W, CANVAS_H);
+    ctx.lineTo(CANVAS_W, CANVAS_H - 24);
     ctx.stroke();
 
     ctx.shadowBlur = 0;
 
-    // ── Gap edge neon strips (vertical gradient) ────────────────
-    const stripHeight = CHUNK_HEIGHT;
-    const stripGradL = ctx.createLinearGradient(gapL, ch.y, gapL, ch.y + stripHeight);
-    stripGradL.addColorStop(0, "rgba(0,255,255,0)");
-    stripGradL.addColorStop(0.5, "rgba(0,255,255,0.5)");
-    stripGradL.addColorStop(1, "rgba(255,20,147,0)");
-    ctx.fillStyle = stripGradL;
-    ctx.fillRect(gapL - 2, ch.y, 3, stripHeight);
-
-    const stripGradR = ctx.createLinearGradient(gapR, ch.y, gapR, ch.y + stripHeight);
-    stripGradR.addColorStop(0, "rgba(255,20,147,0)");
-    stripGradR.addColorStop(0.5, "rgba(255,20,147,0.5)");
-    stripGradR.addColorStop(1, "rgba(0,255,255,0)");
-    ctx.fillStyle = stripGradR;
-    ctx.fillRect(gapR - 1, ch.y, 3, stripHeight);
-
-    // ── Faint "VERT-X" text ─────────────────────────────────────
+    // VERT-X text
     ctx.save();
     ctx.globalAlpha = 0.07 * (0.5 + 0.5 * Math.sin(timeOffset * 2));
-    ctx.fillStyle   = "#0ff";
-    ctx.font        = "bold 48px Orbitron, \"Courier New\", monospace";
-    ctx.textAlign   = "center";
+    ctx.fillStyle = "#0ff";
+    ctx.font = "bold 48px Orbitron, \"Courier New\", monospace";
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("VERT-X", ch.gapCentre, midY);
     ctx.restore();
