@@ -12,21 +12,30 @@
    Constants
    =================================================================== */
 
-const CANVAS_W      = 360;
-const CANVAS_H      = 640;
-const WALL_WIDTH    = 50;       // minimum wall thickness from edges
-const CHUNK_HEIGHT  = 800;      // height of one tunnel segment
-const MIN_GAP       = 75;       // narrowest horizontal passage
-const MAX_GAP       = 150;      // widest horizontal passage
-const POOL_COUNT    = 6;        // pre‑allocated chunks in the ring
-const SCROLL_SPEED  = 300;      // base px/s (multiplied by game speed)
+const CANVAS_W         = 360;
+const CANVAS_H         = 640;
+const WALL_WIDTH       = 50;       // minimum wall thickness from edges
+const CHUNK_HEIGHT     = 800;      // height of one tunnel segment
+const MIN_GAP          = 75;       // narrowest horizontal passage
+const MAX_GAP          = 150;      // widest horizontal passage
+const POOL_COUNT       = 6;        // pre‑allocated chunks in the ring
+const SCROLL_SPEED     = 300;      // base px/s (multiplied by game speed)
+
+/**
+ * Luminosity multipliers (0–1 range recommended, >1 for overbright)
+ * Adjust independently for buildings vs. neon signs/billboards.
+ */
+const BUILDING_LUMINOSITY     = 1.0;   // windows, AC vents, roof details, edge neons
+const SIGN_LUMINOSITY         = 1.2;   // neon signs (carteles) on building faces
+const GAP_NEON_LUMINOSITY     = 1.0;   // gap edge neons, corner brackets
+const CENTER_TEXT_LUMINOSITY  = 1.0;   // VERT-X text in gap center
 
 /**
  * Minimum horizontal overlap (px) between consecutive gap openings.
  * Ensures the player can always transition between chunks without
  * being caught outside the gap (phantom collision).
  */
-const MIN_OVERLAP   = 24;       // minimum px of overlap between consecutive gaps (player diameter)
+const MIN_OVERLAP   = 10;       // minimum px of overlap between consecutive gaps (player diameter)
 
 /* ===================================================================
    State
@@ -96,6 +105,8 @@ function generateChunk(yPos, prevChunk) {
     gapWidth,
     leftWalls:  [rect(0,           yPos, gapLeft,          CHUNK_HEIGHT)],
     rightWalls: [rect(gapRight,    yPos, CANVAS_W - gapRight, CHUNK_HEIGHT)],
+    leftBuilding:  generateBuildingData(0, gapLeft, true),
+    rightBuilding: generateBuildingData(gapRight, CANVAS_W - gapRight, false),
   };
 }
 
@@ -116,6 +127,8 @@ function recycleChunk(chunk) {
   chunk.gapWidth   = fresh.gapWidth;
   chunk.leftWalls  = fresh.leftWalls;
   chunk.rightWalls = fresh.rightWalls;
+  chunk.leftBuilding  = fresh.leftBuilding;
+  chunk.rightBuilding = fresh.rightBuilding;
 }
 
 /* ===================================================================
@@ -154,70 +167,393 @@ export function update(dt, speed) {
     for (const w of ch.rightWalls) w.y += scrollDist;
   }
 
-  // Recycle chunks that have scrolled past the bottom of the viewport
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks[i].y > CANVAS_H) {
-      recycleChunk(chunks[i]);
+
+  // Recycle chunks from bottom to top to maintain gap constraint chain
+  const toRecycle = chunks.filter(ch => ch.y > CANVAS_H);
+  toRecycle.sort((a, b) => b.y - a.y);
+  for (const ch of toRecycle) {
+    recycleChunk(ch);
+  }
+
+}
+
+/* ===================================================================
+   Japanese Building Renderer — helper functions
+   =================================================================== */
+
+const NEON_COLORS = [
+  "#ff1493", // hot pink
+  "#0ff",    // cyan
+  "#ffd700", // gold
+  "#ff4444", // red
+  "#44ff44", // green
+  "#ff8800", // orange
+  "#aa44ff", // purple
+];
+
+const KANJI_SIGNS = [
+  "垂直", "疾走", "光速", "極限", "飛翔",
+  "ネオン", "サイバー", "夜行", "電脳", "未来",
+  "VERT", "SPEED", "NEON", "CYBER", "VOID"
+];
+
+const KANA_SIGNS = [
+  "ビル", "タワー", "ネオン", "サイバー", "ナイト",
+  "タテ", "ヨコ", "ソラ", "ユメ", "ミライ"
+];
+
+let timeOffset = 0;
+
+function generateBuildingData(baseX, width, isLeftWall) {
+  const floorRelHeight = 40 + Math.random() * 20;
+  const numFloors = Math.max(3, Math.floor(CHUNK_HEIGHT / floorRelHeight));
+  const actualFloorHeight = CHUNK_HEIGHT / numFloors;
+
+  const floors = [];
+  for (let f = 0; f < numFloors; f++) {
+    const floorRY = f * actualFloorHeight;
+
+    // Windows evenly spread
+    const numWindows = Math.max(2, Math.min(Math.floor(width / 26), 6));
+    const windowWidth = 14;
+    const windowHeight = 20;
+    const windowSpacing = (width - numWindows * windowWidth) / (numWindows + 1);
+
+    const windows = [];
+    for (let w = 0; w < numWindows; w++) {
+      const rx = windowSpacing + w * (windowWidth + windowSpacing);
+      windows.push({
+        rx,
+        ry: floorRY + (actualFloorHeight - windowHeight) / 2,
+        w: windowWidth, h: windowHeight,
+        lit: Math.random() < 0.6,
+        color: NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)],
+        blinkPhase: Math.random() * Math.PI * 2,
+      });
+    }
+
+    // Neon sign on the INNER edge (facing the gap)
+    let neonSign = null;
+    if (Math.random() < 0.18) {
+      const signText = Math.random() < 0.6
+        ? KANJI_SIGNS[Math.floor(Math.random() * KANJI_SIGNS.length)]
+        : KANA_SIGNS[Math.floor(Math.random() * KANA_SIGNS.length)];
+      neonSign = {
+        text: signText,
+        color: NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)],
+        rx: isLeftWall ? width - 4 : 4,
+        ry: floorRY + actualFloorHeight * 0.25,
+        width: Math.min(width - 8, 80),
+        phase: Math.random() * Math.PI * 2,
+        isKanji: /[\u4e00-\u9faf]/.test(signText),
+      };
+    }
+
+    // AC unit on the OUTER edge (away from gap)
+    let acUnit = null;
+    if (Math.random() < 0.15) {
+      acUnit = {
+        rx: isLeftWall ? 2 : width - 18,
+        ry: floorRY + actualFloorHeight * 0.12,
+        w: 20, h: 24,
+      };
+    }
+
+    floors.push({ ry: floorRY, height: actualFloorHeight, windows, neonSign, acUnit });
+  }
+
+  // Roof spires
+  const roofDetails = [];
+  const numSpires = Math.max(1, Math.min(Math.floor(width / 28), 4));
+  for (let s = 0; s < numSpires; s++) {
+    roofDetails.push({
+      rx: (s + 0.5) * (width / numSpires),
+      ry: 0,
+      height: 8 + Math.random() * 14,
+      halfWidth: 2 + Math.random() * 2,
+      hasAntenna: Math.random() < 0.4,
+    });
+  }
+
+  return { baseX, width, isLeftWall, floors, roofDetails };
+}
+
+function drawBuilding(ctx, building, chunkY, time) {
+  const { baseX, width, isLeftWall, floors, roofDetails } = building;
+  const baseY = chunkY;
+
+  ctx.save();
+
+  // ── Building base silhouette (dark gradient) ──────────────────────
+  const baseGradient = ctx.createLinearGradient(baseX, baseY, baseX + width, baseY);
+  baseGradient.addColorStop(0, "#0a0a0f");
+  baseGradient.addColorStop(0.5, "#0f0f1a");
+  baseGradient.addColorStop(1, "#0a0a0f");
+  ctx.fillStyle = baseGradient;
+  ctx.fillRect(baseX, baseY, width, CHUNK_HEIGHT);
+
+  // ── Draw each floor ───────────────────────────────────────────────
+  for (const floor of floors) {
+    const floorY = baseY + floor.ry;
+    const floorH = floor.height;
+
+    // Floor ledge
+    const ledgeY = floorY + floorH;
+    ctx.fillStyle = "#1a1a2e";
+    ctx.fillRect(baseX - 1, ledgeY - 2, width + 2, 3);
+    const ledgeCyanAlpha = 0.12 * BUILDING_LUMINOSITY;
+    ctx.fillStyle = "rgba(0, 255, 255, " + ledgeCyanAlpha + ")";
+    ctx.fillRect(baseX - 1, ledgeY - 2, width + 2, 1);
+
+    // Windows
+    for (const win of floor.windows) {
+      const px = baseX + win.rx;
+      const py = floorY + win.ry - floor.ry;
+
+      const blinkIntensity = (0.2 + 0.15 * Math.sin(time * 3 + win.blinkPhase)) * BUILDING_LUMINOSITY;
+
+      // Frame
+      ctx.fillStyle = "#1a1a2e";
+      ctx.fillRect(px - 1, py - 1, win.w + 2, win.h + 2);
+
+      if (win.lit) {
+        // Lit window with glow
+        const r = parseInt(win.color.slice(1, 3), 16);
+        const g = parseInt(win.color.slice(3, 5), 16);
+        const b = parseInt(win.color.slice(5, 7), 16);
+        ctx.shadowColor = win.color;
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = "rgba(" + r + "," + g + "," + b + "," + blinkIntensity + ")";
+        ctx.fillRect(px, py, win.w, win.h);
+        ctx.shadowBlur = 0;
+        // Reflection
+        ctx.fillStyle = "rgba(255,255,255," + (0.08 * blinkIntensity) + ")";
+        ctx.fillRect(px + 1, py + 1, win.w - 2, 2);
+      } else {
+        // Dark window
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.fillRect(px, py, win.w, win.h);
+        const darkCyanAlpha = 0.03 * BUILDING_LUMINOSITY;
+        ctx.fillStyle = "rgba(0,255,255," + darkCyanAlpha + ")";
+        ctx.fillRect(px, py, win.w, win.h * 0.3);
+      }
+    }
+
+    // Neon sign
+    if (floor.neonSign) {
+      const sign = floor.neonSign;
+      const signY = floorY + sign.ry - floor.ry;
+      const pulseIntensity = (0.7 + 0.3 * Math.sin(time * 4 + sign.phase)) * SIGN_LUMINOSITY;
+      const glowBlur = (12 + 10 * pulseIntensity) * SIGN_LUMINOSITY;
+
+      // Backing plate
+      const plateW = Math.min(sign.width, sign.text.length * 12 + 6);
+      const plateX = isLeftWall ? baseX + width - plateW - 2 : baseX + 2;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(plateX, signY - 2, plateW, 24);
+
+      // Glowing text
+      ctx.save();
+      ctx.shadowColor = sign.color;
+      ctx.shadowBlur = glowBlur;
+      ctx.fillStyle = sign.color;
+      ctx.font = sign.isKanji
+        ? "bold 20px \"Noto Sans JP\", \"Hiragino Kaku Gothic ProN\", sans-serif"
+        : "bold 15px \"Noto Sans JP\", \"Hiragino Kaku Gothic ProN\", sans-serif";
+      ctx.textAlign = isLeftWall ? "right" : "left";
+      ctx.textBaseline = "top";
+      ctx.globalAlpha = 0.9 * pulseIntensity;
+      ctx.fillText(sign.text, isLeftWall ? baseX + width - 4 : baseX + 4, signY);
+      ctx.restore();
+    }
+
+    // AC Unit / ventilation
+    if (floor.acUnit) {
+      const ac = floor.acUnit;
+      const acY = floorY + ac.ry - floor.ry;
+      const acX = baseX + ac.rx;
+
+      // Body
+      ctx.fillStyle = "#2a2a3e";
+      ctx.fillRect(acX, acY, ac.w, ac.h);
+
+      // Grill lines
+      ctx.strokeStyle = "rgba(0,255,255,0.25)";
+      ctx.lineWidth = 0.5;
+      for (let g = 0; g < 4; g++) {
+        const gy = acY + 4 + g * 4;
+        ctx.beginPath();
+        ctx.moveTo(acX + 2, gy);
+        ctx.lineTo(acX + ac.w - 2, gy);
+        ctx.stroke();
+      }
+
+      // Vent glow
+      const acVentAlpha = 0.35 * BUILDING_LUMINOSITY;
+      ctx.fillStyle = "rgba(255,20,147," + acVentAlpha + ")";
+      ctx.fillRect(isLeftWall ? acX : acX + ac.w - 3, acY + 4, 3, ac.h - 8);
+
+      // Ventilation duct going upward
+      const acDuctAlpha = 0.15 * BUILDING_LUMINOSITY;
+      ctx.strokeStyle = "rgba(0,255,255," + acDuctAlpha + ")";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(acX + ac.w / 2, acY);
+      ctx.lineTo(acX + ac.w / 2, baseY);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
+
+  // ── Roof details (spires, antennas) ───────────────────────────────
+  for (const roof of roofDetails) {
+    const roofX = baseX + roof.rx;
+    const roofY = baseY + roof.ry;
+
+    // Spire
+    ctx.fillStyle = "#1a1a2e";
+    ctx.beginPath();
+    ctx.moveTo(roofX - roof.halfWidth, roofY);
+    ctx.lineTo(roofX, roofY - roof.height);
+    ctx.lineTo(roofX + roof.halfWidth, roofY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Spire tip glow
+    const spireGlowAlpha = 5 * BUILDING_LUMINOSITY;
+    ctx.fillStyle = "#0ff";
+    ctx.shadowColor = "#0ff";
+    ctx.shadowBlur = spireGlowAlpha;
+    ctx.beginPath();
+    ctx.arc(roofX, roofY - roof.height, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Antenna with blinking light
+    if (roof.hasAntenna) {
+      ctx.strokeStyle = "rgba(255,255,255,0.3)";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(roofX, roofY - roof.height);
+      ctx.lineTo(roofX, roofY - roof.height - 12);
+      ctx.stroke();
+
+      const blink = Math.sin(time * 5) > 0;
+      if (blink) {
+        const antennaGlowAlpha = 6 * BUILDING_LUMINOSITY;
+        ctx.fillStyle = "#ff0044";
+        ctx.shadowColor = "#ff0044";
+        ctx.shadowBlur = antennaGlowAlpha;
+        ctx.beginPath();
+        ctx.arc(roofX, roofY - roof.height - 12, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+
+  // ── Building edge neon accent (vertical strip at gap side) ───────
+  const edgeX = isLeftWall ? baseX + width - 1 : baseX;
+  const edgeAlpha = BUILDING_LUMINOSITY;
+  const edgeGradient = ctx.createLinearGradient(edgeX, baseY, edgeX, baseY + CHUNK_HEIGHT);
+  edgeGradient.addColorStop(0, "rgba(0,255,255,0)");
+  edgeGradient.addColorStop(0.3, "rgba(0,255,255," + (0.35 * edgeAlpha) + ")");
+  edgeGradient.addColorStop(0.7, "rgba(255,20,147," + (0.35 * edgeAlpha) + ")");
+  edgeGradient.addColorStop(1, "rgba(0,255,255,0)");
+  ctx.fillStyle = edgeGradient;
+  ctx.fillRect(edgeX, baseY, 2, CHUNK_HEIGHT);
+
+  ctx.restore();
 }
 
 export function draw(alpha) {
-  // Only draw chunks that overlap the viewport
+  timeOffset += (16 * alpha) / 1000;
+
   const visTop    = -CHUNK_HEIGHT;
   const visBottom = CANVAS_H + CHUNK_HEIGHT;
 
+  // PASS 1: Draw all buildings
+  for (const ch of chunks) {
+    if (ch.y + CHUNK_HEIGHT < visTop || ch.y > visBottom) continue;
+    drawBuilding(ctx, ch.leftBuilding, ch.y, timeOffset);
+    drawBuilding(ctx, ch.rightBuilding, ch.y, timeOffset);
+  }
+
+  // PASS 2: Draw all gap decorations ON TOP of buildings
   for (const ch of chunks) {
     if (ch.y + CHUNK_HEIGHT < visTop || ch.y > visBottom) continue;
 
-    // ── Wall segments ────────────────────────────────────────────
-    for (const wall of [...ch.leftWalls, ...ch.rightWalls]) {
-      // Fill
-      ctx.fillStyle = '#0a0a0f';
-      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+    const gapL = ch.gapCentre - ch.gapWidth / 2;
+    const gapR = ch.gapCentre + ch.gapWidth / 2;
+    const midY = ch.y + CHUNK_HEIGHT * 0.5;
+    const brk = 16;
 
-      // Neon cyan border (1 px)
-      ctx.strokeStyle = '#0ff';
-      ctx.lineWidth   = 1;
-      ctx.strokeRect(wall.x + 0.5, wall.y + 0.5, wall.w - 1, wall.h - 1);
-    }
+    // Gap edge neon strips
+    const gapAlpha = GAP_NEON_LUMINOSITY;
+    const stripGradL = ctx.createLinearGradient(gapL, ch.y, gapL, ch.y + CHUNK_HEIGHT);
+    stripGradL.addColorStop(0, "rgba(0,255,255,0)");
+    stripGradL.addColorStop(0.5, "rgba(0,255,255," + (0.5 * gapAlpha) + ")");
+    stripGradL.addColorStop(1, "rgba(255,20,147,0)");
+    ctx.fillStyle = stripGradL;
+    ctx.fillRect(gapL - 2, ch.y, 3, CHUNK_HEIGHT);
 
-    // ── Corner brackets near gap edges ───────────────────────────
-    const gapY  = ch.y;                           // gap spans full chunk height
-    const gapL  = ch.gapCentre - ch.gapWidth / 2;
-    const gapR  = ch.gapCentre + ch.gapWidth / 2;
-    const midY  = ch.y + CHUNK_HEIGHT * 0.5;
-    const brk   = 12;                             // bracket arm length
+    const stripGradR = ctx.createLinearGradient(gapR, ch.y, gapR, ch.y + CHUNK_HEIGHT);
+    stripGradR.addColorStop(0, "rgba(255,20,147,0)");
+    stripGradR.addColorStop(0.5, "rgba(255,20,147," + (0.5 * gapAlpha) + ")");
+    stripGradR.addColorStop(1, "rgba(0,255,255,0)");
+    ctx.fillStyle = stripGradR;
+    ctx.fillRect(gapR - 1, ch.y, 3, CHUNK_HEIGHT);
 
-    ctx.strokeStyle = '#0ff';
-    ctx.lineWidth   = 2;
+        // Corner brackets (canvas edges)
+    const bracketPulse = (0.6 + 0.4 * Math.sin(timeOffset * 5)) * GAP_NEON_LUMINOSITY;
+    ctx.strokeStyle = "rgba(0,255,255," + bracketPulse + ")";
+    ctx.lineWidth   = 2.5;
+    ctx.shadowColor = "#0ff";
+    ctx.shadowBlur  = 8 * bracketPulse;
 
-    // Top‑left bracket
+    // Top-left (canvas corner)
     ctx.beginPath();
-    ctx.moveTo(gapL, midY - brk);
-    ctx.lineTo(gapL, midY);
-    ctx.lineTo(gapL + brk, midY);
+    ctx.moveTo(0, 24);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(24, 0);
     ctx.stroke();
 
-    // Top‑right bracket
+    // Top-right (canvas corner)
     ctx.beginPath();
-    ctx.moveTo(gapR, midY - brk);
-    ctx.lineTo(gapR, midY);
-    ctx.lineTo(gapR - brk, midY);
+    ctx.moveTo(CANVAS_W - 24, 0);
+    ctx.lineTo(CANVAS_W, 0);
+    ctx.lineTo(CANVAS_W, 24);
     ctx.stroke();
 
-    // ── Faint "VERT" text in centre of passage ───────────────────
+    // Bottom-left (canvas corner)
+    ctx.beginPath();
+    ctx.moveTo(0, CANVAS_H - 24);
+    ctx.lineTo(0, CANVAS_H);
+    ctx.lineTo(24, CANVAS_H);
+    ctx.stroke();
+
+    // Bottom-right (canvas corner)
+    ctx.beginPath();
+    ctx.moveTo(CANVAS_W - 24, CANVAS_H);
+    ctx.lineTo(CANVAS_W, CANVAS_H);
+    ctx.lineTo(CANVAS_W, CANVAS_H - 24);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+
+    // VERT-X text
     ctx.save();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle   = '#0ff';
-    ctx.font        = 'bold 60px Orbitron, "Courier New", monospace';
-    ctx.textAlign   = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('VERT', ch.gapCentre, midY);
+    const textAlpha = (0.07 * (0.5 + 0.5 * Math.sin(timeOffset * 2))) * CENTER_TEXT_LUMINOSITY;
+    ctx.globalAlpha = textAlpha;
+    ctx.fillStyle = "#0ff";
+    ctx.font = "bold 48px Orbitron, \"Courier New\", monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("VERT-X", ch.gapCentre, midY);
     ctx.restore();
   }
 }
-
 /* ===================================================================
    Getters  (called by player.js, collision.js, collectibles.js)
    =================================================================== */

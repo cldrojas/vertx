@@ -164,19 +164,18 @@ export function draw(/* alpha */) {
   // ── Diamond trail — fading diamond outlines ─────────────────────
   const speedNorm = (player.currentSpeed - 1) / (3 - 1);
   const trailLen = TRAIL_MIN_LEN + speedNorm * (TRAIL_MAX_LEN - TRAIL_MIN_LEN);
-  const SEGS = Math.max(4, Math.round(trailLen / SEG_H));
+  const SEGS = Math.max(6, Math.round(trailLen / SEG_H));
 
   for (let i = 1; i < SEGS; i++) {
     const t = i / SEGS;
     const segY = Math.round(player.y + i * SEG_H);
+    const wave = Math.sin(player.animTimer * 0.005 + i * 4) * (1 - t) * 1;  // this controls the caomet tail movement
     const factor = boostScale * (1 - t * 0.55);
     const hh = Math.round(DIAMOND_HEIGHT * factor);
     const hw = Math.round(DIAMOND_WIDTH * factor);
     const alpha = 0.55 * (1 - t) * (1 - t);
 
     if (alpha < 0.01 || hh < 2) continue;
-
-    const wave = Math.sin(player.animTimer * 0.008 + i * 0.9) * (1 - t) * 2;
 
     ctx.save();
     ctx.globalAlpha = alpha;
