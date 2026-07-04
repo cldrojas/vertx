@@ -12,14 +12,23 @@
    Constants
    =================================================================== */
 
-const CANVAS_W      = 360;
-const CANVAS_H      = 640;
-const WALL_WIDTH    = 50;       // minimum wall thickness from edges
-const CHUNK_HEIGHT  = 800;      // height of one tunnel segment
-const MIN_GAP       = 75;       // narrowest horizontal passage
-const MAX_GAP       = 150;      // widest horizontal passage
-const POOL_COUNT    = 6;        // pre‑allocated chunks in the ring
-const SCROLL_SPEED  = 300;      // base px/s (multiplied by game speed)
+const CANVAS_W         = 360;
+const CANVAS_H         = 640;
+const WALL_WIDTH       = 50;       // minimum wall thickness from edges
+const CHUNK_HEIGHT     = 800;      // height of one tunnel segment
+const MIN_GAP          = 75;       // narrowest horizontal passage
+const MAX_GAP          = 150;      // widest horizontal passage
+const POOL_COUNT       = 6;        // pre‑allocated chunks in the ring
+const SCROLL_SPEED     = 300;      // base px/s (multiplied by game speed)
+
+/**
+ * Luminosity multipliers (0–1 range recommended, >1 for overbright)
+ * Adjust independently for buildings vs. neon signs/billboards.
+ */
+const BUILDING_LUMINOSITY     = 1.0;   // windows, AC vents, roof details, edge neons
+const SIGN_LUMINOSITY         = 1.2;   // neon signs (carteles) on building faces
+const GAP_NEON_LUMINOSITY     = 1.0;   // gap edge neons, corner brackets
+const CENTER_TEXT_LUMINOSITY  = 1.0;   // VERT-X text in gap center
 
 /**
  * Minimum horizontal overlap (px) between consecutive gap openings.
@@ -292,7 +301,8 @@ function drawBuilding(ctx, building, chunkY, time) {
     const ledgeY = floorY + floorH;
     ctx.fillStyle = "#1a1a2e";
     ctx.fillRect(baseX - 1, ledgeY - 2, width + 2, 3);
-    ctx.fillStyle = "rgba(0, 255, 255, 0.12)";
+    const ledgeCyanAlpha = 0.12 * BUILDING_LUMINOSITY;
+    ctx.fillStyle = "rgba(0, 255, 255, " + ledgeCyanAlpha + ")";
     ctx.fillRect(baseX - 1, ledgeY - 2, width + 2, 1);
 
     // Windows
@@ -300,7 +310,7 @@ function drawBuilding(ctx, building, chunkY, time) {
       const px = baseX + win.rx;
       const py = floorY + win.ry - floor.ry;
 
-      const blinkIntensity = 0.2 + 0.15 * Math.sin(time * 3 + win.blinkPhase);
+      const blinkIntensity = (0.2 + 0.15 * Math.sin(time * 3 + win.blinkPhase)) * BUILDING_LUMINOSITY;
 
       // Frame
       ctx.fillStyle = "#1a1a2e";
@@ -323,7 +333,8 @@ function drawBuilding(ctx, building, chunkY, time) {
         // Dark window
         ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.fillRect(px, py, win.w, win.h);
-        ctx.fillStyle = "rgba(0,255,255,0.03)";
+        const darkCyanAlpha = 0.03 * BUILDING_LUMINOSITY;
+        ctx.fillStyle = "rgba(0,255,255," + darkCyanAlpha + ")";
         ctx.fillRect(px, py, win.w, win.h * 0.3);
       }
     }
@@ -332,8 +343,8 @@ function drawBuilding(ctx, building, chunkY, time) {
     if (floor.neonSign) {
       const sign = floor.neonSign;
       const signY = floorY + sign.ry - floor.ry;
-      const pulseIntensity = 0.7 + 0.3 * Math.sin(time * 4 + sign.phase);
-      const glowBlur = 12 + 10 * pulseIntensity;
+      const pulseIntensity = (0.7 + 0.3 * Math.sin(time * 4 + sign.phase)) * SIGN_LUMINOSITY;
+      const glowBlur = (12 + 10 * pulseIntensity) * SIGN_LUMINOSITY;
 
       // Backing plate
       const plateW = Math.min(sign.width, sign.text.length * 12 + 6);
@@ -378,11 +389,13 @@ function drawBuilding(ctx, building, chunkY, time) {
       }
 
       // Vent glow
-      ctx.fillStyle = "rgba(255,20,147,0.35)";
+      const acVentAlpha = 0.35 * BUILDING_LUMINOSITY;
+      ctx.fillStyle = "rgba(255,20,147," + acVentAlpha + ")";
       ctx.fillRect(isLeftWall ? acX : acX + ac.w - 3, acY + 4, 3, ac.h - 8);
 
       // Ventilation duct going upward
-      ctx.strokeStyle = "rgba(0,255,255,0.15)";
+      const acDuctAlpha = 0.15 * BUILDING_LUMINOSITY;
+      ctx.strokeStyle = "rgba(0,255,255," + acDuctAlpha + ")";
       ctx.lineWidth = 2;
       ctx.setLineDash([2, 3]);
       ctx.beginPath();
@@ -408,9 +421,10 @@ function drawBuilding(ctx, building, chunkY, time) {
     ctx.fill();
 
     // Spire tip glow
+    const spireGlowAlpha = 5 * BUILDING_LUMINOSITY;
     ctx.fillStyle = "#0ff";
     ctx.shadowColor = "#0ff";
-    ctx.shadowBlur = 5;
+    ctx.shadowBlur = spireGlowAlpha;
     ctx.beginPath();
     ctx.arc(roofX, roofY - roof.height, 1.5, 0, Math.PI * 2);
     ctx.fill();
@@ -427,9 +441,10 @@ function drawBuilding(ctx, building, chunkY, time) {
 
       const blink = Math.sin(time * 5) > 0;
       if (blink) {
+        const antennaGlowAlpha = 6 * BUILDING_LUMINOSITY;
         ctx.fillStyle = "#ff0044";
         ctx.shadowColor = "#ff0044";
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = antennaGlowAlpha;
         ctx.beginPath();
         ctx.arc(roofX, roofY - roof.height - 12, 1.5, 0, Math.PI * 2);
         ctx.fill();
@@ -440,10 +455,11 @@ function drawBuilding(ctx, building, chunkY, time) {
 
   // ── Building edge neon accent (vertical strip at gap side) ───────
   const edgeX = isLeftWall ? baseX + width - 1 : baseX;
+  const edgeAlpha = BUILDING_LUMINOSITY;
   const edgeGradient = ctx.createLinearGradient(edgeX, baseY, edgeX, baseY + CHUNK_HEIGHT);
   edgeGradient.addColorStop(0, "rgba(0,255,255,0)");
-  edgeGradient.addColorStop(0.3, "rgba(0,255,255,0.35)");
-  edgeGradient.addColorStop(0.7, "rgba(255,20,147,0.35)");
+  edgeGradient.addColorStop(0.3, "rgba(0,255,255," + (0.35 * edgeAlpha) + ")");
+  edgeGradient.addColorStop(0.7, "rgba(255,20,147," + (0.35 * edgeAlpha) + ")");
   edgeGradient.addColorStop(1, "rgba(0,255,255,0)");
   ctx.fillStyle = edgeGradient;
   ctx.fillRect(edgeX, baseY, 2, CHUNK_HEIGHT);
@@ -474,22 +490,23 @@ export function draw(alpha) {
     const brk = 16;
 
     // Gap edge neon strips
+    const gapAlpha = GAP_NEON_LUMINOSITY;
     const stripGradL = ctx.createLinearGradient(gapL, ch.y, gapL, ch.y + CHUNK_HEIGHT);
     stripGradL.addColorStop(0, "rgba(0,255,255,0)");
-    stripGradL.addColorStop(0.5, "rgba(0,255,255,0.5)");
+    stripGradL.addColorStop(0.5, "rgba(0,255,255," + (0.5 * gapAlpha) + ")");
     stripGradL.addColorStop(1, "rgba(255,20,147,0)");
     ctx.fillStyle = stripGradL;
     ctx.fillRect(gapL - 2, ch.y, 3, CHUNK_HEIGHT);
 
     const stripGradR = ctx.createLinearGradient(gapR, ch.y, gapR, ch.y + CHUNK_HEIGHT);
     stripGradR.addColorStop(0, "rgba(255,20,147,0)");
-    stripGradR.addColorStop(0.5, "rgba(255,20,147,0.5)");
+    stripGradR.addColorStop(0.5, "rgba(255,20,147," + (0.5 * gapAlpha) + ")");
     stripGradR.addColorStop(1, "rgba(0,255,255,0)");
     ctx.fillStyle = stripGradR;
     ctx.fillRect(gapR - 1, ch.y, 3, CHUNK_HEIGHT);
 
         // Corner brackets (canvas edges)
-    const bracketPulse = 0.6 + 0.4 * Math.sin(timeOffset * 5);
+    const bracketPulse = (0.6 + 0.4 * Math.sin(timeOffset * 5)) * GAP_NEON_LUMINOSITY;
     ctx.strokeStyle = "rgba(0,255,255," + bracketPulse + ")";
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = "#0ff";
@@ -527,7 +544,8 @@ export function draw(alpha) {
 
     // VERT-X text
     ctx.save();
-    ctx.globalAlpha = 0.07 * (0.5 + 0.5 * Math.sin(timeOffset * 2));
+    const textAlpha = (0.07 * (0.5 + 0.5 * Math.sin(timeOffset * 2))) * CENTER_TEXT_LUMINOSITY;
+    ctx.globalAlpha = textAlpha;
     ctx.fillStyle = "#0ff";
     ctx.font = "bold 48px Orbitron, \"Courier New\", monospace";
     ctx.textAlign = "center";
