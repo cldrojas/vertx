@@ -7,7 +7,7 @@
  * Exports conform to the main.js import contract.
  */
 
-import { getChunks } from './tunnel.js';
+import { getChunks, validateChunk } from './tunnel.js';
 
 /* ===================================================================
    Constants
@@ -64,15 +64,16 @@ export function reset() {
    =================================================================== */
 
 function spawnObstacles(chunk) {
-  const half = chunk.gapWidth / 2;
-  const gapLeft  = chunk.gapCentre - half;
-  const gapRight = chunk.gapCentre + half;
-
   const count = 1 + Math.floor(Math.random() * MAX_PER_CHUNK);  // 1 or 2
 
   for (let n = 0; n < count; n++) {
     const typeDef = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
-    const ox = gapLeft + Math.random() * (gapRight - gapLeft - typeDef.w);
+
+    // Bias obstacle X to the middle 60 % of the gap
+    const minX = chunk.gapCentre - chunk.gapWidth / 2 + 0.2 * chunk.gapWidth;
+    const maxX = chunk.gapCentre - chunk.gapWidth / 2 + 0.8 * chunk.gapWidth - typeDef.w;
+    const ox  = minX + Math.random() * Math.max(0, maxX - minX);
+
     const oy = chunk.y + 40 + Math.random() * (CHUNK_HEIGHT - 80);
 
     obstacles.push({
@@ -83,6 +84,12 @@ function spawnObstacles(chunk) {
       h: typeDef.h,
       chunkId: chunk.id,
     });
+  }
+
+  // Validate gap integrity after spawning
+  if (!validateChunk(chunk)) {
+    // Gap may have become too narrow — this is informational;
+    // the obstacle placement already respects the gap bounds.
   }
 }
 

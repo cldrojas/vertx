@@ -93,9 +93,9 @@ export function update(dt, speed) {
     const maxX = gap.right - player.radius;
     if (minX < maxX) {
       player.x = Math.max(minX, Math.min(maxX, player.x));
+    } else {
+      player.x = (gap.left + gap.right) / 2;  // center when gap too narrow
     }
-    if (player.x < minX) player.x = minX;
-    if (player.x > maxX) player.x = maxX;
   }
 
   // ── Invulnerability ─────────────────────────────────────────────
