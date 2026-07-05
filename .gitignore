@@ -1,3 +1,6 @@
 node_modules/
 dist/
 .vercel
+
+# Agent Teams Lite — SDD artifacts
+.atl/
