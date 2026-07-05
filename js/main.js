@@ -69,6 +69,9 @@ let speed       = 1.0;    // base speed multiplier; ramps over time
 let lastTime    = 0;
 let accumulator = 0;
 
+// ── Assets ─────────────────────────────────────────────────────────────
+let loadScreenImg = null;
+
 /* ===================================================================
    Game loop  (fixed‑timestep with accumulator)
    =================================================================== */
@@ -269,7 +272,16 @@ function drawMenu() {
  * Game‑over overlay.
  */
 function drawGameOverScreen() {
-  drawGrid();
+  // Draw loadscreen.png as background (covers full canvas)
+  if (loadScreenImg && loadScreenImg.complete && loadScreenImg.naturalWidth > 0) {
+    ctx.drawImage(loadScreenImg, 0, 0, CANVAS_W, CANVAS_H);
+    // Darken overlay for text readability
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  } else {
+    // Fallback: original grid background
+    drawGrid();
+  }
 
   ctx.textAlign   = 'center';
   ctx.textBaseline = 'middle';
@@ -300,9 +312,13 @@ function drawGameOverScreen() {
   }
 
   // ── retry prompt ──
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+  ctx.save();
+  ctx.globalAlpha = pulse;
   ctx.fillStyle = '#0ff';
   ctx.font      = '18px Orbitron, "Courier New", monospace';
   ctx.fillText('TAP TO RETRY', CANVAS_W / 2, 440);
+  ctx.restore();
 }
 
 /* ===================================================================
@@ -362,6 +378,12 @@ function init() {
 
   // Read persisted best score
   bestScore = getBestScore();
+
+  // Preload Game Over background image
+  loadScreenImg = new Image();
+  loadScreenImg.src = '/loadingscreen.jpeg';
+  loadScreenImg.onload = () => console.log('[VERT/X] loadingscreen.jpeg loaded');
+  loadScreenImg.onerror = () => console.warn('[VERT/X] loadingscreen.jpeg not found at /loadingscreen.jpeg');
 
   // Wire modules
   initInput(canvas);

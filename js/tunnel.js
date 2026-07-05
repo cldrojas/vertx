@@ -16,7 +16,7 @@ const CANVAS_W         = 360;
 const CANVAS_H         = 640;
 const WALL_WIDTH       = 50;       // minimum wall thickness from edges
 const CHUNK_HEIGHT     = 800;      // height of one tunnel segment
-const MIN_GAP          = 75;       // narrowest horizontal passage
+const MIN_GAP          = 100;      // narrowest horizontal passage
 const MAX_GAP          = 150;      // widest horizontal passage
 const POOL_COUNT       = 6;        // pre‑allocated chunks in the ring
 const SCROLL_SPEED     = 300;      // base px/s (multiplied by game speed)
@@ -35,7 +35,7 @@ const CENTER_TEXT_LUMINOSITY  = 1.0;   // VERT-X text in gap center
  * Ensures the player can always transition between chunks without
  * being caught outside the gap (phantom collision).
  */
-const MIN_OVERLAP   = 10;       // minimum px of overlap between consecutive gaps (player diameter)
+const MIN_OVERLAP   = 36;       // minimum px of overlap between consecutive gaps (player diameter)
 
 /* ===================================================================
    State
@@ -76,37 +76,60 @@ function rect(x, y, w, h) {
  * The gap centre is constrained relative to the previous chunk (if any).
  */
 function generateChunk(yPos, prevChunk) {
-  const gapWidth = MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const gapWidth = MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP);
 
-  // Horizontal centre for the gap
-  let gapCentre;
-  const halfGap = gapWidth / 2;
-  const margin  = halfGap + 6;              // keep away from canvas edges
+    // Horizontal centre for the gap
+    let gapCentre;
+    const halfGap = gapWidth / 2;
+    const margin  = halfGap + 6;              // keep away from canvas edges
 
-  if (prevChunk) {
-    const prevHalf  = prevChunk.gapWidth / 2;
-    const prevLeft  = prevChunk.gapCentre - prevHalf;
-    const prevRight = prevChunk.gapCentre + prevHalf;
-    // Guarantee at least MIN_OVERLAP between consecutive gaps
-    const lo = Math.max(margin, prevLeft + MIN_OVERLAP - halfGap);
-    const hi = Math.min(CANVAS_W - margin, prevRight - MIN_OVERLAP + halfGap);
-    gapCentre = lo + Math.random() * (hi - lo);
-  } else {
-    gapCentre = margin + Math.random() * (CANVAS_W - margin * 2);
+    if (prevChunk) {
+      const prevHalf  = prevChunk.gapWidth / 2;
+      const prevLeft  = prevChunk.gapCentre - prevHalf;
+      const prevRight = prevChunk.gapCentre + prevHalf;
+      // Guarantee at least MIN_OVERLAP between consecutive gaps
+      const lo = Math.max(margin, prevLeft + MIN_OVERLAP - halfGap);
+      const hi = Math.min(CANVAS_W - margin, prevRight - MIN_OVERLAP + halfGap);
+      if (lo >= hi) continue;   // constraints impossible — retry with different gapWidth
+      gapCentre = lo + Math.random() * (hi - lo);
+    } else {
+      gapCentre = margin + Math.random() * (CANVAS_W - margin * 2);
+    }
+
+    const gapLeft  = gapCentre - halfGap;
+    const gapRight = gapCentre + halfGap;
+
+    const chunk = {
+      id: nextId++,
+      y: yPos,
+      gapCentre,
+      gapWidth,
+      leftWalls:  [rect(0,           yPos, gapLeft,          CHUNK_HEIGHT)],
+      rightWalls: [rect(gapRight,    yPos, CANVAS_W - gapRight, CHUNK_HEIGHT)],
+      leftBuilding:  generateBuildingData(0, gapLeft, true),
+      rightBuilding: generateBuildingData(gapRight, CANVAS_W - gapRight, false),
+    };
+
+    if (_validateChunk(chunk)) return chunk;
   }
 
-  const gapLeft  = gapCentre - halfGap;
-  const gapRight = gapCentre + halfGap;
+  // Fallback — 3rd attempt exhausted: construct a chunk with MAX_GAP width
+  const fw = MAX_GAP;
+  const fh = fw / 2;
+  const fc = prevChunk
+    ? Math.max(fh + 6, Math.min(CANVAS_W - fh - 6, prevChunk.gapCentre))
+    : CANVAS_W / 2;
 
   return {
     id: nextId++,
     y: yPos,
-    gapCentre,
-    gapWidth,
-    leftWalls:  [rect(0,           yPos, gapLeft,          CHUNK_HEIGHT)],
-    rightWalls: [rect(gapRight,    yPos, CANVAS_W - gapRight, CHUNK_HEIGHT)],
-    leftBuilding:  generateBuildingData(0, gapLeft, true),
-    rightBuilding: generateBuildingData(gapRight, CANVAS_W - gapRight, false),
+    gapCentre: fc,
+    gapWidth: fw,
+    leftWalls:  [rect(0, yPos, fc - fh, CHUNK_HEIGHT)],
+    rightWalls: [rect(fc + fh, yPos, CANVAS_W - fc - fh, CHUNK_HEIGHT)],
+    leftBuilding:  generateBuildingData(0, fc - fh, true),
+    rightBuilding: generateBuildingData(fc + fh, CANVAS_W - fc - fh, false),
   };
 }
 
@@ -121,6 +144,20 @@ function recycleChunk(chunk) {
   const next   = idx < sorted.length - 1 ? sorted[idx + 1] : sorted[0];
 
   const fresh = generateChunk(highest.y - CHUNK_HEIGHT, next);
+
+  // Guarantee generated chunk passes validation before applying
+  if (!_validateChunk(fresh)) {
+    // Force a conservative fallback for the gap
+    fresh.gapWidth = MAX_GAP;
+    const halfFallback = MAX_GAP / 2;
+    const fc = Math.max(halfFallback + 6, Math.min(CANVAS_W - halfFallback - 6, fresh.gapCentre));
+    fresh.gapCentre = fc;
+    fresh.leftWalls  = [rect(0, fresh.y, fc - halfFallback, CHUNK_HEIGHT)];
+    fresh.rightWalls = [rect(fc + halfFallback, fresh.y, CANVAS_W - fc - halfFallback, CHUNK_HEIGHT)];
+    fresh.leftBuilding  = generateBuildingData(0, fc - halfFallback, true);
+    fresh.rightBuilding = generateBuildingData(fc + halfFallback, CANVAS_W - fc - halfFallback, false);
+  }
+
   chunk.id         = fresh.id;
   chunk.y          = fresh.y;
   chunk.gapCentre  = fresh.gapCentre;
@@ -129,6 +166,49 @@ function recycleChunk(chunk) {
   chunk.rightWalls = fresh.rightWalls;
   chunk.leftBuilding  = fresh.leftBuilding;
   chunk.rightBuilding = fresh.rightBuilding;
+}
+
+/**
+ * Validate a chunk's gap width and overlap with its neighbours.
+ * Used as a safety net in the generation retry loop and recycling.
+ *
+ * @param {Chunk} chunk
+ * @returns {boolean}  true if the chunk satisfies all constraints
+ */
+function _validateChunk(chunk) {
+  // 1. Minimum gap width
+  if (chunk.gapWidth < MIN_GAP) return false;
+
+  // 2. Overlap with adjacent chunks in the active ring
+  const sorted = [...chunks].sort((a, b) => a.y - b.y);
+  const idx    = sorted.indexOf(chunk);
+  if (idx === -1) return true;           // not yet in the active list
+
+  const half  = chunk.gapWidth / 2;
+  const left  = chunk.gapCentre - half;
+  const right = chunk.gapCentre + half;
+
+  // Previous chunk (above — smaller y)
+  if (idx > 0) {
+    const prev      = sorted[idx - 1];
+    const prevHalf  = prev.gapWidth / 2;
+    const prevLeft  = prev.gapCentre - prevHalf;
+    const prevRight = prev.gapCentre + prevHalf;
+    const overlap   = Math.min(right, prevRight) - Math.max(left, prevLeft);
+    if (overlap < MIN_OVERLAP) return false;
+  }
+
+  // Next chunk (below — larger y)
+  if (idx < sorted.length - 1) {
+    const next      = sorted[idx + 1];
+    const nextHalf  = next.gapWidth / 2;
+    const nextLeft  = next.gapCentre - nextHalf;
+    const nextRight = next.gapCentre + nextHalf;
+    const overlap   = Math.min(right, nextRight) - Math.max(left, nextLeft);
+    if (overlap < MIN_OVERLAP) return false;
+  }
+
+  return true;
 }
 
 /* ===================================================================
@@ -582,6 +662,15 @@ export function getWalls(playerY) {
  */
 export function getChunks() {
   return chunks;
+}
+
+/**
+ * Public validation helper (used by obstacles module after spawning).
+ * @param {Chunk} chunk
+ * @returns {boolean}
+ */
+export function validateChunk(chunk) {
+  return _validateChunk(chunk);
 }
 
 /**
