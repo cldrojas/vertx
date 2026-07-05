@@ -384,11 +384,11 @@ function drawBuilding(ctx, building, chunkY, time) {
     // Cyan glow top edge
     const ledgeCyanAlpha = 0.45 * BUILDING_LUMINOSITY;
     ctx.fillStyle = "rgba(0, 255, 255, " + ledgeCyanAlpha + ")";
-    ctx.fillRect(baseX - 1, ledgeY - 3, width + 2, 2);
+    ctx.fillRect(baseX - 1, ledgeY - 3, width + 2, 3);
     // Hot pink accent bottom edge
     const ledgePinkAlpha = 0.2 * BUILDING_LUMINOSITY;
     ctx.fillStyle = "rgba(255, 20, 147, " + ledgePinkAlpha + ")";
-    ctx.fillRect(baseX - 1, ledgeY, width + 2, 1);
+    ctx.fillRect(baseX - 1, ledgeY, width + 2, 2);
 
     // Windows
     for (const win of floor.windows) {
