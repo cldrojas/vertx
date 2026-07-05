@@ -8,6 +8,8 @@
  * Exports conform to the main.js import contract.
  */
 
+import { drawGlow } from './glow.js';
+
 /* ===================================================================
    Constants
    =================================================================== */
@@ -107,9 +109,25 @@ function generateChunk(yPos, prevChunk) {
       gapWidth,
       leftWalls:  [rect(0,           yPos, gapLeft,          CHUNK_HEIGHT)],
       rightWalls: [rect(gapRight,    yPos, CANVAS_W - gapRight, CHUNK_HEIGHT)],
-      leftBuilding:  generateBuildingData(0, gapLeft, true),
-      rightBuilding: generateBuildingData(gapRight, CANVAS_W - gapRight, false),
+      leftBuilding:  generateBuildingData(0, gapLeft, true, ctx),
+      rightBuilding: generateBuildingData(gapRight, CANVAS_W - gapRight, false, ctx),
+      // Gap gradients (cached at generation — avoid createLinearGradient per frame)
+      gapGradL: null,
+      gapGradR: null,
     };
+
+    // Build cached gap gradients
+    if (ctx) {
+      chunk.gapGradL = ctx.createLinearGradient(gapLeft, yPos, gapLeft, yPos + CHUNK_HEIGHT);
+      chunk.gapGradL.addColorStop(0, "rgba(0,255,255,0)");
+      chunk.gapGradL.addColorStop(0.5, "rgba(0,255,255," + (0.5 * GAP_NEON_LUMINOSITY) + ")");
+      chunk.gapGradL.addColorStop(1, "rgba(255,20,147,0)");
+
+      chunk.gapGradR = ctx.createLinearGradient(gapRight, yPos, gapRight, yPos + CHUNK_HEIGHT);
+      chunk.gapGradR.addColorStop(0, "rgba(255,20,147,0)");
+      chunk.gapGradR.addColorStop(0.5, "rgba(255,20,147," + (0.5 * GAP_NEON_LUMINOSITY) + ")");
+      chunk.gapGradR.addColorStop(1, "rgba(0,255,255,0)");
+    }
 
     if (_validateChunk(chunk)) return chunk;
   }
@@ -121,16 +139,35 @@ function generateChunk(yPos, prevChunk) {
     ? Math.max(fh + 6, Math.min(CANVAS_W - fh - 6, prevChunk.gapCentre))
     : CANVAS_W / 2;
 
-  return {
+  const fallbackChunk = {
     id: nextId++,
     y: yPos,
     gapCentre: fc,
     gapWidth: fw,
     leftWalls:  [rect(0, yPos, fc - fh, CHUNK_HEIGHT)],
     rightWalls: [rect(fc + fh, yPos, CANVAS_W - fc - fh, CHUNK_HEIGHT)],
-    leftBuilding:  generateBuildingData(0, fc - fh, true),
-    rightBuilding: generateBuildingData(fc + fh, CANVAS_W - fc - fh, false),
+    leftBuilding:  generateBuildingData(0, fc - fh, true, ctx),
+    rightBuilding: generateBuildingData(fc + fh, CANVAS_W - fc - fh, false, ctx),
+    gapGradL: null,
+    gapGradR: null,
   };
+
+  // Build cached gap gradients
+  if (ctx) {
+    const gapL = fc - fh;
+    const gapR = fc + fh;
+    fallbackChunk.gapGradL = ctx.createLinearGradient(gapL, yPos, gapL, yPos + CHUNK_HEIGHT);
+    fallbackChunk.gapGradL.addColorStop(0, "rgba(0,255,255,0)");
+    fallbackChunk.gapGradL.addColorStop(0.5, "rgba(0,255,255," + (0.5 * GAP_NEON_LUMINOSITY) + ")");
+    fallbackChunk.gapGradL.addColorStop(1, "rgba(255,20,147,0)");
+
+    fallbackChunk.gapGradR = ctx.createLinearGradient(gapR, yPos, gapR, yPos + CHUNK_HEIGHT);
+    fallbackChunk.gapGradR.addColorStop(0, "rgba(255,20,147,0)");
+    fallbackChunk.gapGradR.addColorStop(0.5, "rgba(255,20,147," + (0.5 * GAP_NEON_LUMINOSITY) + ")");
+    fallbackChunk.gapGradR.addColorStop(1, "rgba(0,255,255,0)");
+  }
+
+  return fallbackChunk;
 }
 
 /**
@@ -154,8 +191,8 @@ function recycleChunk(chunk) {
     fresh.gapCentre = fc;
     fresh.leftWalls  = [rect(0, fresh.y, fc - halfFallback, CHUNK_HEIGHT)];
     fresh.rightWalls = [rect(fc + halfFallback, fresh.y, CANVAS_W - fc - halfFallback, CHUNK_HEIGHT)];
-    fresh.leftBuilding  = generateBuildingData(0, fc - halfFallback, true);
-    fresh.rightBuilding = generateBuildingData(fc + halfFallback, CANVAS_W - fc - halfFallback, false);
+    fresh.leftBuilding  = generateBuildingData(0, fc - halfFallback, true, ctx);
+    fresh.rightBuilding = generateBuildingData(fc + halfFallback, CANVAS_W - fc - halfFallback, false, ctx);
   }
 
   chunk.id         = fresh.id;
@@ -166,6 +203,8 @@ function recycleChunk(chunk) {
   chunk.rightWalls = fresh.rightWalls;
   chunk.leftBuilding  = fresh.leftBuilding;
   chunk.rightBuilding = fresh.rightBuilding;
+  chunk.gapGradL     = fresh.gapGradL;
+  chunk.gapGradR     = fresh.gapGradR;
 }
 
 /**
@@ -284,7 +323,7 @@ const KANA_SIGNS = [
 
 let timeOffset = 0;
 
-function generateBuildingData(baseX, width, isLeftWall) {
+function generateBuildingData(baseX, width, isLeftWall, _ctxForGrad) {
   const floorRelHeight = 40 + Math.random() * 20;
   const numFloors = Math.max(3, Math.floor(CHUNK_HEIGHT / floorRelHeight));
   const actualFloorHeight = CHUNK_HEIGHT / numFloors;
@@ -355,20 +394,37 @@ function generateBuildingData(baseX, width, isLeftWall) {
     });
   }
 
-  return { baseX, width, isLeftWall, floors, roofDetails };
+  // ── Pre‑compute gradients (saved per building, reused every frame) ──
+  const bctx = _ctxForGrad;
+  let baseGradient = null;
+  let edgeGradient = null;
+
+  if (bctx) {
+    // Base silhouette gradient (horizontal)
+    baseGradient = bctx.createLinearGradient(baseX, 0, baseX + width, 0);
+    baseGradient.addColorStop(0, "#0a0a0f");
+    baseGradient.addColorStop(0.5, "#0f0f1a");
+    baseGradient.addColorStop(1, "#0a0a0f");
+
+    // Edge neon accent gradient (vertical, full chunk height at generation time)
+    const edgeX = isLeftWall ? baseX + width - 1 : baseX;
+    edgeGradient = bctx.createLinearGradient(edgeX, 0, edgeX, CHUNK_HEIGHT);
+    edgeGradient.addColorStop(0, "rgba(0,255,255,0)");
+    edgeGradient.addColorStop(0.3, "rgba(0,255,255," + (0.35 * BUILDING_LUMINOSITY) + ")");
+    edgeGradient.addColorStop(0.7, "rgba(255,20,147," + (0.35 * BUILDING_LUMINOSITY) + ")");
+    edgeGradient.addColorStop(1, "rgba(0,255,255,0)");
+  }
+
+  return { baseX, width, isLeftWall, floors, roofDetails, baseGradient, edgeGradient };
 }
 
 function drawBuilding(ctx, building, chunkY, time) {
-  const { baseX, width, isLeftWall, floors, roofDetails } = building;
+  const { baseX, width, isLeftWall, floors, roofDetails, baseGradient, edgeGradient } = building;
   const baseY = chunkY;
 
   ctx.save();
 
-  // ── Building base silhouette (dark gradient) ──────────────────────
-  const baseGradient = ctx.createLinearGradient(baseX, baseY, baseX + width, baseY);
-  baseGradient.addColorStop(0, "#0a0a0f");
-  baseGradient.addColorStop(0.5, "#0f0f1a");
-  baseGradient.addColorStop(1, "#0a0a0f");
+  // ── Building base silhouette (cached gradient — no allocation per frame) ──
   ctx.fillStyle = baseGradient;
   ctx.fillRect(baseX, baseY, width, CHUNK_HEIGHT);
 
@@ -402,15 +458,13 @@ function drawBuilding(ctx, building, chunkY, time) {
       ctx.fillRect(px - 1, py - 1, win.w + 2, win.h + 2);
 
       if (win.lit) {
-        // Lit window with glow
+        // Lit window with glow (cached glow texture instead of shadowBlur)
         const r = parseInt(win.color.slice(1, 3), 16);
         const g = parseInt(win.color.slice(3, 5), 16);
         const b = parseInt(win.color.slice(5, 7), 16);
-        ctx.shadowColor = win.color;
-        ctx.shadowBlur = 3;
+        drawGlow(ctx, px + win.w / 2, py + win.h / 2, 3);
         ctx.fillStyle = "rgba(" + r + "," + g + "," + b + "," + blinkIntensity + ")";
         ctx.fillRect(px, py, win.w, win.h);
-        ctx.shadowBlur = 0;
         // Reflection
         ctx.fillStyle = "rgba(255,255,255," + (0.08 * blinkIntensity) + ")";
         ctx.fillRect(px + 1, py + 1, win.w - 2, 2);
@@ -437,10 +491,9 @@ function drawBuilding(ctx, building, chunkY, time) {
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(plateX, signY - 2, plateW, 24);
 
-      // Glowing text
+      // Glowing text (cached glow texture)
       ctx.save();
-      ctx.shadowColor = sign.color;
-      ctx.shadowBlur = glowBlur;
+      drawGlow(ctx, plateX + plateW / 2, signY + 10, Math.round(glowBlur * 0.5));
       ctx.fillStyle = sign.color;
       ctx.font = sign.isKanji
         ? "bold 20px \"Noto Sans JP\", \"Hiragino Kaku Gothic ProN\", sans-serif"
@@ -513,15 +566,12 @@ function drawBuilding(ctx, building, chunkY, time) {
     ctx.closePath();
     ctx.fill();
 
-    // Spire tip glow
-    const spireGlowAlpha = 5 * BUILDING_LUMINOSITY;
+    // Spire tip glow (cached glow)
+    drawGlow(ctx, roofX, roofY - roof.height, 5);
     ctx.fillStyle = "#0ff";
-    ctx.shadowColor = "#0ff";
-    ctx.shadowBlur = spireGlowAlpha;
     ctx.beginPath();
     ctx.arc(roofX, roofY - roof.height, 1.5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
 
     // Antenna with blinking light
     if (roof.hasAntenna) {
@@ -534,26 +584,17 @@ function drawBuilding(ctx, building, chunkY, time) {
 
       const blink = Math.sin(time * 5) > 0;
       if (blink) {
-        const antennaGlowAlpha = 6 * BUILDING_LUMINOSITY;
+        drawGlow(ctx, roofX, roofY - roof.height - 12, 6);
         ctx.fillStyle = "#ff0044";
-        ctx.shadowColor = "#ff0044";
-        ctx.shadowBlur = antennaGlowAlpha;
         ctx.beginPath();
         ctx.arc(roofX, roofY - roof.height - 12, 1.5, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
       }
     }
   }
 
-  // ── Building edge neon accent (vertical strip at gap side) ───────
+  // ── Building edge neon accent (cached gradient) ──────────────────
   const edgeX = isLeftWall ? baseX + width - 1 : baseX;
-  const edgeAlpha = BUILDING_LUMINOSITY;
-  const edgeGradient = ctx.createLinearGradient(edgeX, baseY, edgeX, baseY + CHUNK_HEIGHT);
-  edgeGradient.addColorStop(0, "rgba(0,255,255,0)");
-  edgeGradient.addColorStop(0.3, "rgba(0,255,255," + (0.35 * edgeAlpha) + ")");
-  edgeGradient.addColorStop(0.7, "rgba(255,20,147," + (0.35 * edgeAlpha) + ")");
-  edgeGradient.addColorStop(1, "rgba(0,255,255,0)");
   ctx.fillStyle = edgeGradient;
   ctx.fillRect(edgeX, baseY, 2, CHUNK_HEIGHT);
 
@@ -582,28 +623,23 @@ export function draw(alpha) {
     const midY = ch.y + CHUNK_HEIGHT * 0.5;
     const brk = 16;
 
-    // Gap edge neon strips
-    const gapAlpha = GAP_NEON_LUMINOSITY;
-    const stripGradL = ctx.createLinearGradient(gapL, ch.y, gapL, ch.y + CHUNK_HEIGHT);
-    stripGradL.addColorStop(0, "rgba(0,255,255,0)");
-    stripGradL.addColorStop(0.5, "rgba(0,255,255," + (0.5 * gapAlpha) + ")");
-    stripGradL.addColorStop(1, "rgba(255,20,147,0)");
-    ctx.fillStyle = stripGradL;
+    // Gap edge neon strips (cached gradients — no allocation per frame)
+    ctx.fillStyle = ch.gapGradL;
     ctx.fillRect(gapL - 2, ch.y, 3, CHUNK_HEIGHT);
 
-    const stripGradR = ctx.createLinearGradient(gapR, ch.y, gapR, ch.y + CHUNK_HEIGHT);
-    stripGradR.addColorStop(0, "rgba(255,20,147,0)");
-    stripGradR.addColorStop(0.5, "rgba(255,20,147," + (0.5 * gapAlpha) + ")");
-    stripGradR.addColorStop(1, "rgba(0,255,255,0)");
-    ctx.fillStyle = stripGradR;
+    ctx.fillStyle = ch.gapGradR;
     ctx.fillRect(gapR - 1, ch.y, 3, CHUNK_HEIGHT);
 
-        // Corner brackets (canvas edges)
+        // Corner brackets (canvas edges) — glow via cache, no shadowBlur
     const bracketPulse = (0.6 + 0.4 * Math.sin(timeOffset * 5)) * GAP_NEON_LUMINOSITY;
     ctx.strokeStyle = "rgba(0,255,255," + bracketPulse + ")";
     ctx.lineWidth   = 2.5;
-    ctx.shadowColor = "#0ff";
-    ctx.shadowBlur  = 8 * bracketPulse;
+
+    // Corner bracket glow (cached glow at each corner)
+    drawGlow(ctx, 0, 0, 8);
+    drawGlow(ctx, CANVAS_W, 0, 8);
+    drawGlow(ctx, 0, CANVAS_H, 8);
+    drawGlow(ctx, CANVAS_W, CANVAS_H, 8);
 
     // Top-left (canvas corner)
     ctx.beginPath();
@@ -632,8 +668,6 @@ export function draw(alpha) {
     ctx.lineTo(CANVAS_W, CANVAS_H);
     ctx.lineTo(CANVAS_W, CANVAS_H - 24);
     ctx.stroke();
-
-    ctx.shadowBlur = 0;
 
     // VERT-X text
     ctx.save();
