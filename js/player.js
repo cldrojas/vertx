@@ -10,6 +10,7 @@
 
 import { dequeueAction, ACTION_TAP } from './input.js';
 import { getGapAtY } from './tunnel.js';
+import { drawGlow } from './glow.js';
 
 /* ===================================================================
    Constants
@@ -170,58 +171,46 @@ export function draw(/* alpha */) {
     ? 1 + Math.sin(player.boostTimer / 250 * Math.PI) * 0.25
     : 1;
 
-  // ── Diamond trail — per‑segment stroke with progressive fade ──
-  // Each segment renders with its own alpha for proper fade, wrapped
-  // in save/restore so main diamond isn't affected. Segment count
-  // uses a power curve so the trail grows progressively with speed:
-  //   ~8  at speed 1.0
-  //   ~12 at speed 1.5
-  //   ~18 at speed 2.0
-  //   ~24 at speed 2.5
-  //   ~30 at speed 3.0
+  // ── Diamond trail — batched single‑path faded diamonds ─────────
+  // Before: individual save/restore + shadowBlur per segment.
+  // After:  single batch beginPath, multiple drawDiamond calls,
+  //         one ctx.stroke() — no shadowBlur (the fade uses alpha alone).
   const speedNorm = (player.currentSpeed - 1) / (3 - 1);
   const progressive = Math.pow(speedNorm, 1.8);  // power curve: slow early, steep late
   const trailLen = TRAIL_MIN_LEN + progressive * (TRAIL_MAX_LEN - TRAIL_MIN_LEN);
   const SEGS = Math.max(6, Math.round(trailLen / SEG_H));
 
   if (SEGS > 1) {
-    ctx.save();
+    ctx.beginPath();
     ctx.strokeStyle = '#0ff';
     ctx.lineWidth   = 1.5;
-
-    const histLen = player.xHistory.length;
 
     for (let i = 1; i < SEGS; i++) {
       const t = i / SEGS;
       const segY = Math.round(player.y + i * SEG_H);
-      const wave = Math.sin(player.animTimer * 0.005 + i * 4) * (1 - t);
-
-      // Read from position history so the tail physically follows
-      // the player's path — bends on direction change, straightens
-      // when flying straight.
-      const histIdx = Math.max(0, histLen - 1 - i);
-      const histX = player.xHistory[histIdx];
-
+      const wave = Math.sin(player.animTimer * 0.005 + i * 4) * (1 - t) * 1;
       const factor = boostScale * (1 - t * 0.55);
       const hh = Math.round(DIAMOND_HEIGHT * factor);
       const hw = Math.round(DIAMOND_WIDTH * factor);
       const alpha = 0.55 * (1 - t) * (1 - t);
 
       if (alpha < 0.01 || hh < 2) continue;
+      if (alpha < 0.01 || hh < 2) continue;
 
       ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      const cx = histX + wave;
+
+      // Draw diamond path (no save/restore — we batch into one path)
+      const cx = player.x + wave;
       const cy = segY;
       ctx.moveTo(cx, cy - hh);
       ctx.lineTo(cx + hw, cy);
       ctx.lineTo(cx, cy + hh);
       ctx.lineTo(cx - hw, cy);
       ctx.closePath();
-      ctx.stroke();
     }
 
-    ctx.restore();
+    // Single stroke for the entire trail
+    ctx.stroke();
   }
 
   // ── Skip during invulnerability flash ───────────────────────────
@@ -241,6 +230,9 @@ export function draw(/* alpha */) {
 
   ctx.save();
   ctx.translate(px, py);
+
+  // Outer glow (cached glow texture instead of shadowBlur)
+  drawGlow(ctx, 0, 0, 22);
 
   // Outer diamond (cyan fill)
   ctx.fillStyle = '#0ff';
