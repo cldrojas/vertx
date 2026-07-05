@@ -377,13 +377,18 @@ function drawBuilding(ctx, building, chunkY, time) {
     const floorY = baseY + floor.ry;
     const floorH = floor.height;
 
-    // Floor ledge
+    // Floor ledge / cornice
     const ledgeY = floorY + floorH;
     ctx.fillStyle = "#1a1a2e";
-    ctx.fillRect(baseX - 1, ledgeY - 2, width + 2, 3);
-    const ledgeCyanAlpha = 0.12 * BUILDING_LUMINOSITY;
+    ctx.fillRect(baseX - 1, ledgeY - 3, width + 2, 5);
+    // Cyan glow top edge
+    const ledgeCyanAlpha = 0.45 * BUILDING_LUMINOSITY;
     ctx.fillStyle = "rgba(0, 255, 255, " + ledgeCyanAlpha + ")";
-    ctx.fillRect(baseX - 1, ledgeY - 2, width + 2, 1);
+    ctx.fillRect(baseX - 1, ledgeY - 3, width + 2, 2);
+    // Hot pink accent bottom edge
+    const ledgePinkAlpha = 0.2 * BUILDING_LUMINOSITY;
+    ctx.fillStyle = "rgba(255, 20, 147, " + ledgePinkAlpha + ")";
+    ctx.fillRect(baseX - 1, ledgeY, width + 2, 1);
 
     // Windows
     for (const win of floor.windows) {
