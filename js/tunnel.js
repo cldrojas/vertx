@@ -491,6 +491,14 @@ function drawBuilding(ctx, building, chunkY, time) {
     }
   }
 
+  // ── Roof edge neon line ──────────────────────────────────────────
+  const roofEdgeCyanAlpha = 0.5 * BUILDING_LUMINOSITY;
+  ctx.fillStyle = "rgba(0, 255, 255, " + roofEdgeCyanAlpha + ")";
+  ctx.fillRect(baseX - 1, baseY - 1, width + 2, 2);
+  const roofEdgePinkAlpha = 0.25 * BUILDING_LUMINOSITY;
+  ctx.fillStyle = "rgba(255, 20, 147, " + roofEdgePinkAlpha + ")";
+  ctx.fillRect(baseX - 1, baseY + 1, width + 2, 1);
+
   // ── Roof details (spires, antennas) ───────────────────────────────
   for (const roof of roofDetails) {
     const roofX = baseX + roof.rx;
