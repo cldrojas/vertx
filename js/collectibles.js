@@ -9,6 +9,7 @@
  */
 
 import { getChunks } from './tunnel.js';
+import { drawGlow } from './glow.js';
 
 /* ===================================================================
    Constants
@@ -142,18 +143,15 @@ export function draw(alpha) {
 
     const { x, y, radius } = coin;
 
-    // ── Glow ────────────────────────────────────────────────────
+    // ── Glow (cached glow texture instead of shadowBlur) ────────
     ctx.save();
-    ctx.shadowColor = '#ff0';
-    ctx.shadowBlur  = 10;
+    drawGlow(ctx, x, y, 10);
 
     // ── Yellow circle ───────────────────────────────────────────
     ctx.fillStyle = '#ff0';
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
-
-    ctx.shadowBlur = 0;
     ctx.fillStyle  = '#880';
     ctx.beginPath();
     ctx.arc(x, y, radius * 0.6, 0, Math.PI * 2);
@@ -193,14 +191,12 @@ export function drawCollectibleEffects(/* alpha */) {
     ctx.translate(effect.x, effect.y);
     ctx.scale(scale, scale);
 
-    ctx.shadowColor = '#ff0';
-    ctx.shadowBlur  = 10;
+    drawGlow(ctx, 0, 0, 10);
     ctx.fillStyle   = '#ff0';
     ctx.beginPath();
     ctx.arc(0, 0, COIN_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.shadowBlur = 0;
     ctx.fillStyle  = '#880';
     ctx.beginPath();
     ctx.arc(0, 0, COIN_RADIUS * 0.6, 0, Math.PI * 2);
@@ -227,9 +223,8 @@ export function drawCollectibleEffects(/* alpha */) {
     ctx.textAlign   = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle   = '#ff0';
-    ctx.shadowColor = '#ff0';
-    ctx.shadowBlur  = 6;
     ctx.font        = `bold ${fontSize}px Orbitron, "Courier New", monospace`;
+    drawGlow(ctx, effect.x + (effect.text.length * fontSize * 0.3) / 2, floatY, 6);
     ctx.fillText(effect.text, effect.x, floatY);
     ctx.restore();
   }

@@ -30,6 +30,7 @@ import { init as initObstacles, update as updateObstacles,
 import { init as initCollision, check as checkCollisions,
          reset as resetCollision } from './collision.js';
 import { init as initHUD, drawGameHUD, setSpeed as hudSetSpeed } from './hud.js';
+import { initGlowCache } from './glow.js';
 
 /* ===================================================================
    Constants
@@ -351,7 +352,7 @@ function resizeCanvas() {
   if (!container) return;
 
   const rect = container.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   canvas.width = CANVAS_W * dpr;
   canvas.height = CANVAS_H * dpr;
   canvas.style.width = rect.width + 'px';
@@ -384,6 +385,9 @@ function init() {
   loadScreenImg.src = '/loadingscreen.jpeg';
   loadScreenImg.onload = () => console.log('[VERT/X] loadingscreen.jpeg loaded');
   loadScreenImg.onerror = () => console.warn('[VERT/X] loadingscreen.jpeg not found at /loadingscreen.jpeg');
+
+  // Pre‑render glow cache (replaces expensive shadowBlur)
+  initGlowCache();
 
   // Wire modules
   initInput(canvas);
