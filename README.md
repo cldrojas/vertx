@@ -20,6 +20,22 @@ Collect coins, dodge walls, survive as long as you can. The tunnel gets faster, 
 - **Pixel art aesthetic**: 360×640 logical resolution with crisp pixel rendering
 - **Synth‑wave / cyberpunk vibe**: cyan + magenta neon strips, glowing windows, animated signs
 
+### Gallery
+
+<table>
+  <tr>
+    <td><img src="screenshots/slow.png" width="140" alt="Slow"></td>
+    <td><img src="screenshots/mid.png" width="140" alt="Mid"></td>
+    <td><img src="screenshots/jump.png" width="140" alt="Jump"></td>
+    <td><img src="screenshots/fast.png" width="140" alt="Fast"></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/superfast.png" width="140" alt="Super Fast"></td>
+    <td><img src="screenshots/fast-jump.png" width="140" alt="Fast Jump"></td>
+    <td><img src="screenshots/game-over.png" width="140" alt="Game Over"></td>
+  </tr>
+</table>
+
 ---
 
 ## Performance Optimisation
