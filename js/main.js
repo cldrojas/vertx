@@ -66,6 +66,9 @@ let combo       = 1;      // score multiplier
 let lastCoinTime = 0;     // timestamp of most‑recent coin collected
 let speed       = 1.0;    // base speed multiplier; ramps over time
 
+// ── Debug ──────────────────────────────────────────────────────────────
+let debugPause = false;   // freeze frame on collision for inspection
+
 // ── Loop timing ───────────────────────────────────────────────────────
 let lastTime    = 0;
 let accumulator = 0;
@@ -115,6 +118,14 @@ function update(dt) {
 
     /* ── PLAYING ────────────────────────────────────────────────────── */
     case STATE.PLAYING:
+      // Debug pause: freeze on collision, tap to resume
+      if (debugPause) {
+        if (dequeueAction() === ACTION_TAP) {
+          debugPause = false;
+        }
+        break;  // skip all updates while paused
+      }
+
       updatePlayer(dt, speed);
       updateTunnel(dt, speed);
       updateCollectibles(dt, speed);
@@ -136,7 +147,8 @@ function update(dt) {
           lives, score, combo, speed, lastCoinTime,
         });
 
-        if (result.wallHit) {
+        if (result.wallHit || result.obstacleHit) {
+          debugPause = true;
           lives = result.isNewLives;
         }
         if (result.coinCollected) {
@@ -195,6 +207,21 @@ function render(alpha) {
       drawPlayer(alpha);
       hudSetSpeed(speed);
       drawGameHUD(score, lives, combo);
+
+      // Debug pause overlay
+      if (debugPause) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.08)';
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ff0000';
+        ctx.font = 'bold 20px Orbitron, "Courier New", monospace';
+        ctx.fillText('⏸ COLISION', CANVAS_W / 2, 60);
+        ctx.font = '12px Orbitron, "Courier New", monospace';
+        ctx.fillText('toca para continuar', CANVAS_W / 2, 90);
+        ctx.restore();
+      }
       break;
 
     case STATE.GAME_OVER:
@@ -335,6 +362,7 @@ function resetGame() {
   combo         = 1;
   lastCoinTime  = 0;
   speed         = 1.0;
+  debugPause    = false;
 
   resetPlayer();
   resetTunnel();
