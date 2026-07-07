@@ -39,6 +39,19 @@ const CENTER_TEXT_LUMINOSITY  = 1.0;   // VERT-X text in gap center
  */
 const MIN_OVERLAP   = 36;       // minimum px of overlap between consecutive gaps (player diameter)
 
+/**
+ * Minimum overhang (px) for building wall edges between consecutive chunks.
+ * When the gap shifts (or changes width) between chunks, each wall edge must
+ * either stay in the same position OR shift by at least this many pixels.
+ * This prevents near‑imperceptible 2‑5px shifts that make the player collide
+ * with a wall that visually appears continuous.
+ *
+ * The value matches the player's collision‑box width (radius × 2) so the
+ * step is always at least as wide as the character itself — visually
+ * unmistakable.
+ */
+const MIN_OVERHANG  = 24;       // player collision‑box width (radius 12 × 2)
+
 /* ===================================================================
    State
    =================================================================== */
@@ -95,6 +108,14 @@ function generateChunk(yPos, prevChunk) {
       const hi = Math.min(CANVAS_W - margin, prevRight - MIN_OVERLAP + halfGap);
       if (lo >= hi) continue;   // constraints impossible — retry with different gapWidth
       gapCentre = lo + Math.random() * (hi - lo);
+
+      // Guarantee minimum overhang on each wall edge
+      const newLeft  = gapCentre - halfGap;
+      const newRight = gapCentre + halfGap;
+      const leftStep  = Math.abs(newLeft  - prevLeft);
+      const rightStep = Math.abs(newRight - prevRight);
+      if ((leftStep  > 0 && leftStep  < MIN_OVERHANG) ||
+          (rightStep > 0 && rightStep < MIN_OVERHANG)) continue;
     } else {
       gapCentre = margin + Math.random() * (CANVAS_W - margin * 2);
     }
@@ -135,9 +156,45 @@ function generateChunk(yPos, prevChunk) {
   // Fallback — 3rd attempt exhausted: construct a chunk with MAX_GAP width
   const fw = MAX_GAP;
   const fh = fw / 2;
-  const fc = prevChunk
+  let fc = prevChunk
     ? Math.max(fh + 6, Math.min(CANVAS_W - fh - 6, prevChunk.gapCentre))
     : CANVAS_W / 2;
+
+  // Ensure MIN_OVERHANG in the fallback so the building edge shift is
+  // always visually noticeable.
+  if (prevChunk) {
+    const prevHalf  = prevChunk.gapWidth / 2;
+    const prevLeft  = prevChunk.gapCentre - prevHalf;
+    const prevRight = prevChunk.gapCentre + prevHalf;
+    const fbLeft    = fc - fh;
+    const fbRight   = fc + fh;
+    const leftStep  = Math.abs(fbLeft  - prevLeft);
+    const rightStep = Math.abs(fbRight - prevRight);
+
+    if ((leftStep  > 0 && leftStep  < MIN_OVERHANG) ||
+        (rightStep > 0 && rightStep < MIN_OVERHANG)) {
+      // The coupling between centre offset and edge shifts means nudging
+      // the gap centre affects BOTH edges.  When the gap width differs from
+      // the previous chunk, the natural shift (diff) is already baked in.
+      // To make both edges reach MIN_OVERHANG the centre must shift by:
+      //   MIN_OVERHANG + diff   (where diff = |fh - prevHalf|)
+      const diff = Math.abs(fh - prevHalf);
+      const need = MIN_OVERHANG + diff;
+      // Nudge toward the canvas edge with enough room
+      const slackLeft  = fc - (fh + 6);
+      const slackRight = (CANVAS_W - fh - 6) - fc;
+      if (slackRight >= need) {
+        fc += need;
+      } else if (slackLeft >= need) {
+        fc -= need;
+      } else {
+        // Not enough room either way — nudge as far as possible
+        fc = slackRight >= slackLeft
+          ? Math.min(CANVAS_W - fh - 6, fc + need)
+          : Math.max(fh + 6, fc - need);
+      }
+    }
+  }
 
   const fallbackChunk = {
     id: nextId++,
@@ -235,6 +292,12 @@ function _validateChunk(chunk) {
     const prevRight = prev.gapCentre + prevHalf;
     const overlap   = Math.min(right, prevRight) - Math.max(left, prevLeft);
     if (overlap < MIN_OVERLAP) return false;
+
+    // 3. Minimum overhang for building wall edges (visual continuity)
+    const leftStep  = Math.abs(left  - prevLeft);
+    const rightStep = Math.abs(right - prevRight);
+    if ((leftStep  > 0 && leftStep  < MIN_OVERHANG) ||
+        (rightStep > 0 && rightStep < MIN_OVERHANG)) return false;
   }
 
   // Next chunk (below — larger y)
@@ -245,6 +308,12 @@ function _validateChunk(chunk) {
     const nextRight = next.gapCentre + nextHalf;
     const overlap   = Math.min(right, nextRight) - Math.max(left, nextLeft);
     if (overlap < MIN_OVERLAP) return false;
+
+    // 3. Minimum overhang for building wall edges (visual continuity)
+    const leftStep  = Math.abs(left  - nextLeft);
+    const rightStep = Math.abs(right - nextRight);
+    if ((leftStep  > 0 && leftStep  < MIN_OVERHANG) ||
+        (rightStep > 0 && rightStep < MIN_OVERHANG)) return false;
   }
 
   return true;
