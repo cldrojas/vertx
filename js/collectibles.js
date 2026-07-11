@@ -169,6 +169,13 @@ export function draw(alpha) {
     ctx.stroke();
 
     ctx.restore();
+
+    // ── Debug: collision circle ─────────────────────────────────────
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 

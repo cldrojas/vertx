@@ -37,7 +37,7 @@ const CENTER_TEXT_LUMINOSITY  = 1.0;   // VERT-X text in gap center
  * Ensures the player can always transition between chunks without
  * being caught outside the gap (phantom collision).
  */
-const MIN_OVERLAP   = 36;       // minimum px of overlap between consecutive gaps (player diameter)
+const MIN_OVERLAP   = 18;       // minimum px of overlap between consecutive gaps (player diameter)
 
 /**
  * Minimum overhang (px) for building wall edges between consecutive chunks.
@@ -50,7 +50,7 @@ const MIN_OVERLAP   = 36;       // minimum px of overlap between consecutive gap
  * step is always at least as wide as the character itself — visually
  * unmistakable.
  */
-const MIN_OVERHANG  = 24;       // player collision‑box width (radius 12 × 2)
+const MIN_OVERHANG  = 18;       // player collision‑box width (radius 9 × 2)
 
 /* ===================================================================
    State
@@ -748,6 +748,15 @@ export function draw(alpha) {
     ctx.textBaseline = "middle";
     ctx.fillText("VERT-X", ch.gapCentre, midY);
     ctx.restore();
+  }
+
+  // ── Debug: wall collision boxes ────────────────────────────────────
+  ctx.strokeStyle = '#ff0000';
+  ctx.lineWidth   = 1;
+  for (const ch of chunks) {
+    if (ch.y + CHUNK_HEIGHT < visTop || ch.y > visBottom) continue;
+    for (const w of ch.leftWalls)  ctx.strokeRect(w.x, w.y, w.w, w.h);
+    for (const w of ch.rightWalls) ctx.strokeRect(w.x, w.y, w.w, w.h);
   }
 }
 /* ===================================================================

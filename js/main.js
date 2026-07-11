@@ -16,7 +16,8 @@ import { init as initPlayer, update as updatePlayer,
          draw as drawPlayer,   reset as resetPlayer,
          getPosition as getPlayerPosition,
          getBounds as getPlayerBounds,
-         isInvulnerable as playerIsInvulnerable } from './player.js';
+         isInvulnerable as playerIsInvulnerable,
+         setFrozen as setPlayerFrozen } from './player.js';
 import { init as initTunnel, update as updateTunnel,
          draw as drawTunnel,  reset as resetTunnel,
          getWalls as tunnelGetWalls } from './tunnel.js';
@@ -68,6 +69,7 @@ let speed       = 1.0;    // base speed multiplier; ramps over time
 
 // ── Debug ──────────────────────────────────────────────────────────────
 let debugPause = false;   // freeze frame on collision for inspection
+let rafId      = 0;       // rAF handle so we can cancel the loop
 
 // ── Loop timing ───────────────────────────────────────────────────────
 let lastTime    = 0;
@@ -96,10 +98,18 @@ function gameLoop(timestamp) {
     accumulator -= FIXED_DT;
   }
 
+  // Freeze: render one last frame with overlay, then kill the loop.
+  // cancelAnimationFrame here is useless (rafId already fired),
+  // so we simply don't schedule the next frame.
+  if (debugPause) {
+    render(0);
+    return;
+  }
+
   const alpha = accumulator / FIXED_DT;
   render(alpha);
 
-  requestAnimationFrame(gameLoop);
+  rafId = requestAnimationFrame(gameLoop);
 }
 
 /* ===================================================================
@@ -120,18 +130,13 @@ function update(dt) {
     case STATE.PLAYING:
       // Debug pause: freeze on collision, tap to resume
       if (debugPause) {
-        if (dequeueAction() === ACTION_TAP) {
-          debugPause = false;
-        }
-        break;  // skip all updates while paused
+        break;  // loop is cancelled — this line is never reached,
+                // but kept as a safety guard
       }
 
-      updatePlayer(dt, speed);
-      updateTunnel(dt, speed);
-      updateCollectibles(dt, speed);
-      updateObstacles(dt, speed);
-
-      // ── Collision detection ──────────────────────────────────────
+      // ── Collision detection (pre‑movement) ─────────────────────
+      // Check BEFORE moving so the freeze happens on the same frame,
+      // not the next one. Nothing moves if there's a hit.
       {
         const pBounds = getPlayerBounds();
         const playerState = {
@@ -150,6 +155,9 @@ function update(dt) {
         if (result.wallHit || result.obstacleHit) {
           debugPause = true;
           lives = result.isNewLives;
+          setPlayerFrozen(true);
+          registerResumeHandler();
+          break;  // freeze — gameLoop will render once and die
         }
         if (result.coinCollected) {
           score = result.isNewScore;
@@ -162,6 +170,12 @@ function update(dt) {
         }
         speed = result.isSpeed;
       }
+
+      // ── Movement (only when no collision) ──────────────────────
+      updatePlayer(dt, speed);
+      updateTunnel(dt, speed);
+      updateCollectibles(dt, speed);
+      updateObstacles(dt, speed);
 
       // ── Auto‑score — points tick up even without coins ─────────
       score += 1;
@@ -363,12 +377,45 @@ function resetGame() {
   lastCoinTime  = 0;
   speed         = 1.0;
   debugPause    = false;
+  setPlayerFrozen(false);
 
   resetPlayer();
   resetTunnel();
   resetCollectibles();
   resetObstacles();
   resetCollision();
+}
+
+/* ── Debug‑pause resume ─────────────────────────────────────────────── */
+
+/**
+ * Bind pointer + key listeners that restart the loop on next tap.
+ * Listeners self‑remove once either fires.
+ */
+function registerResumeHandler() {
+  canvas.addEventListener('pointerdown', onResumeInput, { once: true });
+  document.addEventListener('keydown', onResumeKey, { once: true });
+}
+
+function onResumeInput() {
+  document.removeEventListener('keydown', onResumeKey);
+  resumeGame();
+}
+
+function onResumeKey(e) {
+  if (e.key === ' ' || e.key === 'Space' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    canvas.removeEventListener('pointerdown', onResumeInput);
+    resumeGame();
+  }
+}
+
+function resumeGame() {
+  setPlayerFrozen(false);
+  debugPause  = false;
+  lastTime    = performance.now();   // avoid delta spike
+  accumulator = 0;
+  rafId = requestAnimationFrame(gameLoop);
 }
 
 /**
@@ -432,7 +479,7 @@ function init() {
 
   // Boot the loop
   lastTime = performance.now();
-  requestAnimationFrame(gameLoop);
+  rafId = requestAnimationFrame(gameLoop);
 }
 
 // ── Auto‑start ──────────────────────────────────────────────────────
