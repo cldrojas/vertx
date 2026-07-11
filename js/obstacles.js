@@ -141,6 +141,11 @@ export function draw(alpha) {
     ctx.fillStyle   = '#ff1493';
     ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
     ctx.restore();
+
+    // ── Debug: collision box ────────────────────────────────────────
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth   = 1;
+    ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
   }
 }
 

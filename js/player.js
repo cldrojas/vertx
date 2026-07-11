@@ -35,12 +35,14 @@ const MAX_HISTORY = 60;         // max recent positions stored for trail chasing
 
 let ctx;
 
+let frozen = false;        // true during debug‑pause: skip flash / shake
+
 const player = {
   x: 180,
   y: 580,
   vx: -250,
   vy: 0,
-  radius: 12,
+  radius: 9,                // matches DIAMOND_WIDTH — collision box = diamond visual width
   lives: 3,
   invulnTimer: 0,
   shakeTimer: 0,
@@ -64,7 +66,7 @@ export function reset() {
   player.y           = 580;
   player.vx          = -250;
   player.vy          = 0;
-  player.radius      = 12;
+  player.radius      = 9;
   player.lives       = 3;
   player.invulnTimer = 0;
   player.shakeTimer  = 0;
@@ -156,7 +158,7 @@ function drawDiamond(_ctx, cx, cy, hw, hh, fill) {
    =================================================================== */
 
 export function draw(/* alpha */) {
-  const shaking = player.shakeTimer > 0;
+  const shaking = !frozen && player.shakeTimer > 0;
   if (shaking) {
     ctx.save();
     ctx.translate(
@@ -166,7 +168,7 @@ export function draw(/* alpha */) {
   }
 
   // ── Boost pulse scale ───────────────────────────────────────────
-  const boostScale = player.boostTimer > 0
+  const boostScale = (!frozen && player.boostTimer > 0)
     ? 1 + Math.sin(player.boostTimer / 250 * Math.PI) * 0.25
     : 1;
 
@@ -225,7 +227,7 @@ export function draw(/* alpha */) {
   }
 
   // ── Skip during invulnerability flash ───────────────────────────
-  if (player.invulnTimer > 0) {
+  if (!frozen && player.invulnTimer > 0) {
     const flashCycle = Math.floor(player.invulnTimer / 100) % 2 === 0;
     if (!flashCycle) {
       if (shaking) ctx.restore();
@@ -257,6 +259,16 @@ export function draw(/* alpha */) {
   ctx.lineWidth   = 1;
   drawDiamond(ctx, 0, 0, dsW, dsH, false);
 
+  // ── Debug: collision AABB ────────────────────────────────────────
+  ctx.strokeStyle = '#ff0000';
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(
+    -player.radius,
+    -player.radius,
+    player.radius * 2,
+    player.radius * 2,
+  );
+
   ctx.restore();
 
   if (shaking) ctx.restore();
@@ -284,6 +296,10 @@ export function getBounds() {
 
 export function isInvulnerable() {
   return player.invulnTimer > 0;
+}
+
+export function setFrozen(value) {
+  frozen = value;
 }
 
 export function getLives() {
