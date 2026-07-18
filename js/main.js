@@ -67,6 +67,18 @@ let combo       = 1;      // score multiplier
 let lastCoinTime = 0;     // timestamp of most‑recent coin collected
 let speed       = 1.0;    // base speed multiplier; ramps over time
 
+// ── Game‑over lockout ─────────────────────────────────────────────────
+let gameOverEnteredAt = 0;  // performance.now() when GAME_OVER started
+const GAME_OVER_LOCKOUT_MS = 400;
+
+// Retry button hit area (logical 360×640 space)
+const RETRY_RECT = {
+  x: (CANVAS_W - 200) / 2,   // 80
+  y: 415,
+  w: 200,
+  h: 50,
+};
+
 // ── Debug ──────────────────────────────────────────────────────────────
 let debugPause = false;   // freeze frame on collision for inspection
 let rafId      = 0;       // rAF handle so we can cancel the loop
@@ -120,7 +132,7 @@ function update(dt) {
   switch (gameState) {
     /* ── MENU ──────────────────────────────────────────────────────── */
     case STATE.MENU:
-      if (dequeueAction() === ACTION_TAP) {
+      if (dequeueAction()?.type === ACTION_TAP) {
         resetGame();
         gameState = STATE.PLAYING;
       }
@@ -187,15 +199,26 @@ function update(dt) {
           setBestScore(bestScore);
         }
         gameState = STATE.GAME_OVER;
+        gameOverEnteredAt = performance.now();
       }
       break;
 
     /* ── GAME_OVER ──────────────────────────────────────────────────── */
-    case STATE.GAME_OVER:
-      if (dequeueAction() === ACTION_TAP) {
-        gameState = STATE.MENU;
+    case STATE.GAME_OVER: {
+      // Always drain the queue to avoid action bleed‑through
+      const action = dequeueAction();
+      if (action && performance.now() - gameOverEnteredAt >= GAME_OVER_LOCKOUT_MS) {
+        // Keyboard taps have no coordinates — treat as center (always valid)
+        const tx = action.x ?? CANVAS_W / 2;
+        const ty = action.y ?? CANVAS_H / 2;
+        const inRect = tx >= RETRY_RECT.x && tx <= RETRY_RECT.x + RETRY_RECT.w
+                    && ty >= RETRY_RECT.y && ty <= RETRY_RECT.y + RETRY_RECT.h;
+        if (inRect) {
+          gameState = STATE.MENU;
+        }
       }
       break;
+    }
   }
 }
 
@@ -353,13 +376,24 @@ function drawGameOverScreen() {
     ctx.fillText('★ NEW BEST ★', CANVAS_W / 2, 360);
   }
 
-  // ── retry prompt ──
-  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+  // ── retry button ──
   ctx.save();
+  ctx.strokeStyle = 'rgba(0, 255, 255, 0.35)';
+  ctx.lineWidth = 1.5;
+  const rr = RETRY_RECT;
+  const rrPad = 10;
+  ctx.beginPath();
+  ctx.roundRect(rr.x - rrPad, rr.y - rrPad, rr.w + rrPad * 2, rr.h + rrPad * 2, 6);
+  ctx.stroke();
+
+  // ── retry prompt (inside the button) ──
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
   ctx.globalAlpha = pulse;
   ctx.fillStyle = '#0ff';
   ctx.font      = '18px Orbitron, "Courier New", monospace';
-  ctx.fillText('TAP TO RETRY', CANVAS_W / 2, 440);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('TAP TO RETRY', CANVAS_W / 2, rr.y + rr.h / 2);
   ctx.restore();
 }
 
