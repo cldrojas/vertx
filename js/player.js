@@ -80,7 +80,7 @@ export function reset() {
 
 export function update(dt, speed) {
   // ── Input ───────────────────────────────────────────────────────
-  if (dequeueAction() === ACTION_TAP) {
+  if (dequeueAction()?.type === ACTION_TAP) {
     player.vx = -player.vx;
     player.boostTimer = 250;          // 250 ms boost pulse
   }
