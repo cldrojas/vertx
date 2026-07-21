@@ -50,7 +50,7 @@ const MIN_OVERLAP   = 18;       // minimum px of overlap between consecutive gap
  * step is always at least as wide as the character itself — visually
  * unmistakable.
  */
-const MIN_OVERHANG  = 18;       // player collision‑box width (radius 9 × 2)
+const MIN_OVERHANG  = 24;       // player collision‑box width (radius 12 × 2)
 
 /* ===================================================================
    State
