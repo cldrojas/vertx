@@ -117,7 +117,7 @@ function generateChunk(yPos, prevChunk) {
       if ((leftStep  > 0 && leftStep  < MIN_OVERHANG) ||
           (rightStep > 0 && rightStep < MIN_OVERHANG)) continue;
     } else {
-      gapCentre = margin + Math.random() * (CANVAS_W - margin * 2);
+      gapCentre = CANVAS_W / 2;
     }
 
     const gapLeft  = gapCentre - halfGap;

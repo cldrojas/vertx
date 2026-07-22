@@ -66,7 +66,7 @@ export function reset() {
   player.vy          = 0;
   player.radius      = 12;
   player.lives       = 3;
-  player.invulnTimer = 0;
+  player.invulnTimer = 1000;
   player.shakeTimer  = 0;
   player.animTimer   = 0;
   player.boostTimer  = 0;
