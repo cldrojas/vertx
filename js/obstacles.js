@@ -105,10 +105,11 @@ export function update(dt, speed) {
     obs.y += scrollDist;
   }
 
-  // ── Remove obstacles that are off-screen ──────────────────────────
-  obstacles = obstacles.filter(o =>
-    o.y > -40 && o.y < CANVAS_H + 40
-  );
+  // ── Remove obstacles that have scrolled past the bottom ────────────
+  // NOTE: obstacles spawn far above the viewport (inside chunks queued
+  // for later) and are expected to have very negative y until they
+  // scroll into view. Only cull once they exit past the bottom edge.
+  obstacles = obstacles.filter(o => o.y < CANVAS_H + 40);
 
   // ── Spawn new obstacles for fresh chunks ─────────────────────────
   const activeChunks = getChunks();
