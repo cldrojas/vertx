@@ -96,11 +96,14 @@ export function update(dt, speed) {
     coin.y += scrollDist;
   }
 
-  // ── Remove coins that are off‑screen or collected ──────────────
+  // ── Remove coins that are collected or have scrolled past the bottom ──
+  // NOTE: coins spawn far above the viewport (inside chunks queued for
+  // later) and are expected to have very negative y until they scroll
+  // into view. Only cull once they exit past the bottom edge.
   const keep = [];
   for (const c of coins) {
     if (c.collected) continue;
-    if (c.y < -COIN_RADIUS * 4 || c.y > CANVAS_H + COIN_RADIUS * 4) continue;
+    if (c.y > CANVAS_H + COIN_RADIUS * 4) continue;
     keep.push(c);
   }
   coins = keep;
