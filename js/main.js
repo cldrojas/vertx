@@ -152,7 +152,7 @@ function update(dt) {
           lives, score, combo, speed, lastCoinTime,
         });
 
-        if (result.wallHit) {
+        if (result.wallHit || result.obstacleHit) {
           lives = result.isNewLives;
         }
         if (result.coinCollected) {
